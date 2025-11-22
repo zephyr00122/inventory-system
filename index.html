@@ -91,7 +91,6 @@
             const handleCameraScan = (code) => {
                 setScanning(false);
                 setPage('form');
-                // 優先找序號 (包含逗號分隔的判斷)
                 const item = inventory.find(i => {
                     const serials = i.序號 ? String(i.序號).split(',') : [];
                     return serials.includes(code);
@@ -109,12 +108,11 @@
                 }
             };
 
-            // 手動輸入處理 (不跳視窗)
+            // 手動輸入處理
             const handleManualInput = (e) => {
                 const code = e.target.value;
                 setForm(prev => ({ ...prev, barcode: code }));
                 
-                // 嘗試比對序號
                 const item = inventory.find(i => {
                     const serials = i.序號 ? String(i.序號).split(',') : [];
                     return serials.includes(code);
@@ -128,7 +126,7 @@
                 }
             };
 
-            // 品名選擇處理 (自動帶入舊資料)
+            // 品名選擇處理
             const handleNameChange = (val) => {
                 setForm(prev => ({ ...prev, name: val }));
                 const item = inventory.find(i => i.品名 === val);
@@ -147,6 +145,25 @@
                 e.preventDefault();
                 if (!form.name) return Swal.fire('錯誤', '請填寫品名', 'warning');
                 
+                // === 新增：出庫防呆檢查 ===
+                if (form.type === 'OUT' && form.barcode) {
+                    // 1. 在現有庫存中尋找該品名
+                    const currentItem = inventory.find(i => i.品名 === form.name);
+                    
+                    if (!currentItem) {
+                        // 如果連品名都找不到，直接報錯
+                        return Swal.fire('出庫失敗', '庫存中找不到此品項', 'error');
+                    }
+                    
+                    // 2. 檢查該品項的序號清單是否包含輸入的序號
+                    const existingSerials = currentItem.序號 ? String(currentItem.序號).split(',') : [];
+                    if (!existingSerials.includes(form.barcode)) {
+                        // 找不到序號，報錯並停止執行
+                        return Swal.fire('出庫失敗', '該項目並無此序號，無法出庫', 'error');
+                    }
+                }
+                // =========================
+
                 setLoading(true);
 
                 const data = new URLSearchParams();
@@ -250,7 +267,6 @@
                                 </div>
 
                                 <div className="flex gap-2">
-                                    {/* 這裡移除提示文字 */}
                                     <input type="text" placeholder="序號" className="flex-1 p-3 border rounded-lg bg-gray-50" value={form.barcode} onChange={handleManualInput} />
                                     <button onClick={() => setScanning(true)} className="bg-gray-800 text-white w-12 rounded-lg"><i className="fa-solid fa-qrcode"></i></button>
                                 </div>
@@ -259,7 +275,6 @@
                                     <label className="block text-sm font-bold mb-1">品名 *</label>
                                     <input list="names" placeholder="輸入或從選單選擇..." className="w-full p-3 border rounded-lg" value={form.name} onChange={e => handleNameChange(e.target.value)} />
                                     <datalist id="names">{inventory.map((i, idx) => <option key={idx} value={i.品名} />)}</datalist>
-                                    {/* 這裡移除下方的 <p> 提示 */}
                                 </div>
 
                                 <div className="flex gap-4">
