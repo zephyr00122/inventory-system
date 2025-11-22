@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>庫存管理系統 (序號版)</title>
+    <title>庫存管理系統 (修正版)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -103,12 +103,11 @@
                 setLoading(false);
             };
 
-            // 處理掃描 (優先比對序號)
-            const handleScan = (code) => {
+            // 處理掃描 (來自相機，會有提示視窗)
+            const handleCameraScan = (code) => {
                 setScanning(false);
-                setPage('form'); // 自動跳轉到表單頁
+                setPage('form');
                 
-                // 搜尋庫存中是否有此序號
                 const item = inventory.find(i => i.序號 == code);
                 
                 if (item) {
@@ -127,6 +126,29 @@
                     setForm(prev => ({ ...prev, barcode: code, name: '' }));
                     Swal.fire({ icon: 'info', title: '新序號', text: '請填寫品項資訊', timer: 1500, showConfirmButton: false });
                 }
+            };
+
+            // 處理手動輸入 (無提示視窗，僅自動帶入)
+            const handleManualInput = (e) => {
+                const code = e.target.value;
+                setForm(prev => ({ ...prev, barcode: code })); // 立即更新輸入框
+                
+                // 靜默比對
+                const item = inventory.find(i => i.序號 == code);
+                if (item) {
+                    // 找到了！自動填入資料
+                    setForm(prev => ({
+                        ...prev,
+                        barcode: code,
+                        name: item.品名,
+                        warehouse: item.倉庫,
+                        location: item.地點,
+                        position: item.位置,
+                        minStock: item.警戒值
+                    }));
+                    // 這裡不跳視窗，以免打擾使用者輸入
+                }
+                // 如果沒找到，什麼都不做，讓使用者繼續打字
             };
 
             // 處理品名選擇 (模糊搜尋後自動帶入)
@@ -148,6 +170,11 @@
             // 送出表單
             const handleSubmit = async (e) => {
                 e.preventDefault();
+                if (!form.name) {
+                    Swal.fire('錯誤', '請填寫品名', 'warning');
+                    return;
+                }
+
                 setLoading(true);
                 
                 const payload = {
@@ -171,9 +198,17 @@
                         body: JSON.stringify(payload)
                     });
                     
-                    // 模擬成功延遲 (因為 no-cors 收不到回應)
+                    // 模擬成功延遲
                     await new Promise(r => setTimeout(r, 1500));
-                    Swal.fire('完成', `${form.type === 'IN'?'入庫':'出庫'}成功`, 'success');
+                    
+                    Swal.fire({
+                        icon: 'success',
+                        title: '完成', 
+                        text: `${form.type === 'IN'?'入庫':'出庫'}成功`,
+                        timer: 1500,
+                        showConfirmButton: false
+                    });
+
                     setForm(prev => ({ ...prev, name: '', barcode: '', qty: 1, note: '' }));
                     loadData(); // 重整庫存
                 } catch (e) {
@@ -210,7 +245,7 @@
                     </div>
 
                     {/* 掃描視窗 */}
-                    {scanning && <Scanner onScan={handleScan} onClose={() => setScanning(false)} />}
+                    {scanning && <Scanner onScan={handleCameraScan} onClose={() => setScanning(false)} />}
 
                     {/* === 庫存清單頁 === */}
                     {page === 'list' && (
@@ -282,7 +317,7 @@
                                 <div className="flex gap-2">
                                     <input type="text" placeholder="序號 (可手動輸入)" 
                                         className="flex-1 p-3 border rounded-lg bg-gray-50 font-mono"
-                                        value={form.barcode} onChange={e => handleScan(e.target.value)} // 模擬掃描行為
+                                        value={form.barcode} onChange={handleManualInput} // 改用手動輸入處理函式
                                     />
                                     <button type="button" onClick={() => setScanning(true)} className="bg-gray-800 text-white w-12 rounded-lg">
                                         <i className="fa-solid fa-qrcode"></i>
