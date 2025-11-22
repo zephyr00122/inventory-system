@@ -145,24 +145,16 @@
                 e.preventDefault();
                 if (!form.name) return Swal.fire('錯誤', '請填寫品名', 'warning');
                 
-                // === 新增：出庫防呆檢查 ===
+                // 出庫防呆檢查
                 if (form.type === 'OUT' && form.barcode) {
-                    // 1. 在現有庫存中尋找該品名
                     const currentItem = inventory.find(i => i.品名 === form.name);
+                    if (!currentItem) return Swal.fire('出庫失敗', '庫存中找不到此品項', 'error');
                     
-                    if (!currentItem) {
-                        // 如果連品名都找不到，直接報錯
-                        return Swal.fire('出庫失敗', '庫存中找不到此品項', 'error');
-                    }
-                    
-                    // 2. 檢查該品項的序號清單是否包含輸入的序號
                     const existingSerials = currentItem.序號 ? String(currentItem.序號).split(',') : [];
                     if (!existingSerials.includes(form.barcode)) {
-                        // 找不到序號，報錯並停止執行
                         return Swal.fire('出庫失敗', '該項目並無此序號，無法出庫', 'error');
                     }
                 }
-                // =========================
 
                 setLoading(true);
 
@@ -277,10 +269,21 @@
                                     <datalist id="names">{inventory.map((i, idx) => <option key={idx} value={i.品名} />)}</datalist>
                                 </div>
 
+                                {/* 數量與警戒值 (警戒值僅在入庫顯示) */}
                                 <div className="flex gap-4">
-                                    <div className="flex-1"><label className="block text-sm font-bold mb-1">數量</label><input type="number" className="w-full p-3 border rounded-lg text-center font-bold" value={form.qty} onChange={e => setForm({...form, qty: parseInt(e.target.value)||1})} /></div>
-                                    <div className="flex-1"><label className="block text-sm font-bold mb-1">警戒值</label><input type="number" className="w-full p-3 border rounded-lg text-center" value={form.minStock} onChange={e => setForm({...form, minStock: parseInt(e.target.value)||0})} /></div>
+                                    <div className="flex-1">
+                                        <label className="block text-sm font-bold mb-1">數量</label>
+                                        <input type="number" className="w-full p-3 border rounded-lg text-center font-bold" value={form.qty} onChange={e => setForm({...form, qty: parseInt(e.target.value)||1})} />
+                                    </div>
+                                    {/* 條件渲染：只有入庫時顯示警戒值 */}
+                                    {form.type === 'IN' && (
+                                        <div className="flex-1">
+                                            <label className="block text-sm font-bold mb-1">警戒值</label>
+                                            <input type="number" className="w-full p-3 border rounded-lg text-center" value={form.minStock} onChange={e => setForm({...form, minStock: parseInt(e.target.value)||0})} />
+                                        </div>
+                                    )}
                                 </div>
+
                                 <div className="grid grid-cols-2 gap-3 text-sm">
                                     <input placeholder="倉庫" className="p-2 border rounded" value={form.warehouse} onChange={e => setForm({...form, warehouse: e.target.value})} />
                                     <input placeholder="地點" className="p-2 border rounded" value={form.location} onChange={e => setForm({...form, location: e.target.value})} />
