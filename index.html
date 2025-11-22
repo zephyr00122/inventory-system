@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>庫存管理系統 (異動者版)</title>
+    <title>庫存管理系統 (完整版)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -30,6 +30,7 @@
 
         const { useState, useEffect } = React;
 
+        // 掃描器組件
         const Scanner = ({ onScan, onClose }) => {
             useEffect(() => {
                 const html5QrCode = new Html5Qrcode("reader");
@@ -55,7 +56,7 @@
             const [search, setSearch] = useState('');
             const [scanning, setScanning] = useState(false);
 
-            // 新增 modifier 欄位
+            // 表單狀態
             const [form, setForm] = useState({
                 barcode: '', name: '', qty: 1, type: 'IN', warehouse: '主倉',
                 location: '', position: '', minStock: 5, note: '', modifier: ''
@@ -86,26 +87,41 @@
                 setLoading(false);
             };
 
+            // 相機掃描處理
             const handleCameraScan = (code) => {
                 setScanning(false);
                 setPage('form');
-                const item = inventory.find(i => i.序號 == code);
+                // 優先找序號 (包含逗號分隔的判斷)
+                const item = inventory.find(i => {
+                    const serials = i.序號 ? String(i.序號).split(',') : [];
+                    return serials.includes(code);
+                });
+                
                 if (item) {
                     setForm(prev => ({
-                        ...prev, barcode: item.序號, name: item.品名, warehouse: item.倉庫,
+                        ...prev, barcode: code, name: item.品名, warehouse: item.倉庫,
                         location: item.地點, position: item.位置, minStock: item.警戒值, qty: 1
                     }));
-                    Swal.fire({ icon: 'success', title: '已找到品項', text: item.品名, timer: 1000, showConfirmButton: false });
+                    Swal.fire({ icon: 'success', title: '已找到現有商品', text: item.品名, timer: 1000, showConfirmButton: false });
                 } else {
+                    // 如果找不到序號，嘗試找品名 (模擬後端合併邏輯的前端預判)
+                    // 但這裡我們先保持單純：找不到序號就當新輸入，讓使用者填品名
                     setForm(prev => ({ ...prev, barcode: code, name: '' }));
-                    Swal.fire({ icon: 'info', title: '新序號', text: '請填寫資料', timer: 1500, showConfirmButton: false });
+                    Swal.fire({ icon: 'info', title: '新序號', text: '請輸入或選擇品名以進行歸戶', timer: 1500, showConfirmButton: false });
                 }
             };
 
+            // 手動輸入處理 (不跳視窗)
             const handleManualInput = (e) => {
                 const code = e.target.value;
                 setForm(prev => ({ ...prev, barcode: code }));
-                const item = inventory.find(i => i.序號 == code);
+                
+                // 嘗試比對序號
+                const item = inventory.find(i => {
+                    const serials = i.序號 ? String(i.序號).split(',') : [];
+                    return serials.includes(code);
+                });
+
                 if (item) {
                     setForm(prev => ({
                         ...prev, barcode: code, name: item.品名, warehouse: item.倉庫,
@@ -114,13 +130,19 @@
                 }
             };
 
+            // 品名選擇處理 (自動帶入舊資料)
             const handleNameChange = (val) => {
                 setForm(prev => ({ ...prev, name: val }));
                 const item = inventory.find(i => i.品名 === val);
                 if (item) {
+                    // 如果選了舊品名，帶入舊資料 (除了序號，因為序號可能是新的)
                     setForm(prev => ({
-                        ...prev, barcode: item.序號, warehouse: item.倉庫,
-                        location: item.地點, position: item.位置, minStock: item.警戒值
+                        ...prev, 
+                        warehouse: item.倉庫,
+                        location: item.地點, 
+                        position: item.位置, 
+                        minStock: item.警戒值
+                        // 注意：這裡不覆蓋 barcode，保留使用者剛掃描/輸入的新序號
                     }));
                 }
             };
@@ -128,9 +150,7 @@
             const handleSubmit = async (e) => {
                 e.preventDefault();
                 if (!form.name) return Swal.fire('錯誤', '請填寫品名', 'warning');
-                // 檢查異動者是否填寫 (如果需要強制必填，取消註解下一行)
-                // if (!form.modifier) return Swal.fire('錯誤', '請填寫異動者', 'warning');
-
+                
                 setLoading(true);
 
                 const data = new URLSearchParams();
@@ -144,7 +164,6 @@
                 data.append('position', form.position);
                 data.append('minStock', form.minStock);
                 data.append('note', form.note);
-                // 加入異動者
                 data.append('modifier', form.modifier);
 
                 try {
@@ -158,7 +177,7 @@
                     await new Promise(r => setTimeout(r, 2000));
                     
                     Swal.fire({ icon: 'success', title: '完成', text: '資料已送出', timer: 1500, showConfirmButton: false });
-                    // 清空表單時，可以選擇保留異動者，方便連續操作，這裡我選擇不清除 modifier
+                    // 保留異動者，清除其他
                     setForm(prev => ({ ...prev, name: '', barcode: '', qty: 1, note: '' }));
                     loadData(); 
                 } catch (e) {
@@ -203,14 +222,15 @@
                                     <div key={idx} className="bg-white p-4 rounded-xl shadow-sm border relative overflow-hidden">
                                         {item.數量 <= item.警戒值 && <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-red-500"></div>}
                                         <div className="flex justify-between items-start pl-2">
-                                            <div>
+                                            <div className="flex-1">
                                                 <h3 className="font-bold text-gray-800 text-lg">{item.品名}</h3>
                                                 <div className="text-sm text-gray-500 mt-1">
-                                                    <p>{item.序號}</p>
-                                                    <p>{item.倉庫} {item.地點} {item.位置}</p>
+                                                    {/* 序號顯示優化：太長時截斷 */}
+                                                    <p className="break-all"><i className="fa-solid fa-barcode w-5 text-center"></i> {item.序號 || '-'}</p>
+                                                    <p><i className="fa-solid fa-map-pin w-5 text-center"></i> {item.倉庫} {item.地點} {item.位置}</p>
                                                 </div>
                                             </div>
-                                            <div className="text-right">
+                                            <div className="text-right ml-2">
                                                 <div className={`text-3xl font-bold ${item.數量 <= item.警戒值 ? 'text-red-600' : 'text-blue-600'}`}>{item.數量}</div>
                                                 {item.數量 <= item.警戒值 && <span className="text-xs bg-red-100 text-red-600 px-1 rounded font-bold">補貨</span>}
                                             </div>
@@ -229,22 +249,24 @@
                                     <button onClick={() => setForm({...form, type: 'OUT'})} className={`py-2 rounded-md font-bold ${form.type === 'OUT' ? 'bg-white text-orange-600 shadow' : 'text-gray-500'}`}>出庫</button>
                                 </div>
                                 
-                                {/* 異動者欄位 (新增) */}
                                 <div>
                                     <label className="block text-sm font-bold text-gray-700 mb-1">異動者 (操作人員)</label>
-                                    <input type="text" 
-                                        placeholder="請輸入姓名..." 
-                                        className="w-full p-3 border rounded-lg bg-blue-50 focus:bg-white border-blue-200"
-                                        value={form.modifier} 
-                                        onChange={e => setForm({...form, modifier: e.target.value})} 
-                                    />
+                                    <input type="text" placeholder="請輸入姓名..." className="w-full p-3 border rounded-lg bg-blue-50 focus:bg-white border-blue-200"
+                                        value={form.modifier} onChange={e => setForm({...form, modifier: e.target.value})} />
                                 </div>
 
                                 <div className="flex gap-2">
-                                    <input type="text" placeholder="序號" className="flex-1 p-3 border rounded-lg bg-gray-50" value={form.barcode} onChange={handleManualInput} />
+                                    <input type="text" placeholder="序號 (新序號自動合併)" className="flex-1 p-3 border rounded-lg bg-gray-50" value={form.barcode} onChange={handleManualInput} />
                                     <button onClick={() => setScanning(true)} className="bg-gray-800 text-white w-12 rounded-lg"><i className="fa-solid fa-qrcode"></i></button>
                                 </div>
-                                <div><label className="block text-sm font-bold mb-1">品名</label><input list="names" className="w-full p-3 border rounded-lg" value={form.name} onChange={e => handleNameChange(e.target.value)} /><datalist id="names">{inventory.map((i, idx) => <option key={idx} value={i.品名} />)}</datalist></div>
+                                
+                                <div>
+                                    <label className="block text-sm font-bold mb-1">品名 *</label>
+                                    <input list="names" placeholder="輸入或從選單選擇以合併..." className="w-full p-3 border rounded-lg" value={form.name} onChange={e => handleNameChange(e.target.value)} />
+                                    <datalist id="names">{inventory.map((i, idx) => <option key={idx} value={i.品名} />)}</datalist>
+                                    <p className="text-xs text-gray-500 mt-1">* 選擇已存在的品名可將新序號合併至該商品</p>
+                                </div>
+
                                 <div className="flex gap-4">
                                     <div className="flex-1"><label className="block text-sm font-bold mb-1">數量</label><input type="number" className="w-full p-3 border rounded-lg text-center font-bold" value={form.qty} onChange={e => setForm({...form, qty: parseInt(e.target.value)||1})} /></div>
                                     <div className="flex-1"><label className="block text-sm font-bold mb-1">警戒值</label><input type="number" className="w-full p-3 border rounded-lg text-center" value={form.minStock} onChange={e => setForm({...form, minStock: parseInt(e.target.value)||0})} /></div>
@@ -270,10 +292,10 @@
                                             <div><div className="font-bold text-lg">{log.品名}</div><div className="text-xs text-gray-500">{new Date(log.時間).toLocaleString()}</div></div>
                                             <div className="text-right"><span className={`block font-bold text-lg ${log.類型 === 'IN' ? 'text-blue-600' : 'text-orange-600'}`}>{log.類型 === 'IN' ? '+' : ''}{log.變動數量}</span><span className="text-xs text-gray-400">餘 {log.結餘}</span></div>
                                         </div>
-                                        {/* 顯示異動者資訊 */}
                                         <div className="text-sm text-gray-600 bg-gray-50 p-1 rounded mt-1 flex justify-between">
                                             <span><i className="fa-solid fa-user mr-1"></i> {log.異動者 || '未填寫'}</span>
-                                            {log.備註 && <span>註: {log.備註}</span>}
+                                            {/* 顯示本次異動相關的序號 */}
+                                            {log.相關序號 && <span className="truncate max-w-[100px] text-gray-400">SN: {log.相關序號}</span>}
                                         </div>
                                     </div>
                                 ))}
