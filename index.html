@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>庫存管理系統 (完整版)</title>
+    <title>庫存管理系統</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -104,8 +104,6 @@
                     }));
                     Swal.fire({ icon: 'success', title: '已找到現有商品', text: item.品名, timer: 1000, showConfirmButton: false });
                 } else {
-                    // 如果找不到序號，嘗試找品名 (模擬後端合併邏輯的前端預判)
-                    // 但這裡我們先保持單純：找不到序號就當新輸入，讓使用者填品名
                     setForm(prev => ({ ...prev, barcode: code, name: '' }));
                     Swal.fire({ icon: 'info', title: '新序號', text: '請輸入或選擇品名以進行歸戶', timer: 1500, showConfirmButton: false });
                 }
@@ -135,14 +133,12 @@
                 setForm(prev => ({ ...prev, name: val }));
                 const item = inventory.find(i => i.品名 === val);
                 if (item) {
-                    // 如果選了舊品名，帶入舊資料 (除了序號，因為序號可能是新的)
                     setForm(prev => ({
                         ...prev, 
                         warehouse: item.倉庫,
                         location: item.地點, 
                         position: item.位置, 
                         minStock: item.警戒值
-                        // 注意：這裡不覆蓋 barcode，保留使用者剛掃描/輸入的新序號
                     }));
                 }
             };
@@ -177,7 +173,6 @@
                     await new Promise(r => setTimeout(r, 2000));
                     
                     Swal.fire({ icon: 'success', title: '完成', text: '資料已送出', timer: 1500, showConfirmButton: false });
-                    // 保留異動者，清除其他
                     setForm(prev => ({ ...prev, name: '', barcode: '', qty: 1, note: '' }));
                     loadData(); 
                 } catch (e) {
@@ -225,7 +220,6 @@
                                             <div className="flex-1">
                                                 <h3 className="font-bold text-gray-800 text-lg">{item.品名}</h3>
                                                 <div className="text-sm text-gray-500 mt-1">
-                                                    {/* 序號顯示優化：太長時截斷 */}
                                                     <p className="break-all"><i className="fa-solid fa-barcode w-5 text-center"></i> {item.序號 || '-'}</p>
                                                     <p><i className="fa-solid fa-map-pin w-5 text-center"></i> {item.倉庫} {item.地點} {item.位置}</p>
                                                 </div>
@@ -256,15 +250,16 @@
                                 </div>
 
                                 <div className="flex gap-2">
+                                    {/* 這裡移除提示文字 */}
                                     <input type="text" placeholder="序號" className="flex-1 p-3 border rounded-lg bg-gray-50" value={form.barcode} onChange={handleManualInput} />
                                     <button onClick={() => setScanning(true)} className="bg-gray-800 text-white w-12 rounded-lg"><i className="fa-solid fa-qrcode"></i></button>
                                 </div>
                                 
                                 <div>
                                     <label className="block text-sm font-bold mb-1">品名 *</label>
-                                    <input list="names" placeholder="輸入或從選單選擇以合併..." className="w-full p-3 border rounded-lg" value={form.name} onChange={e => handleNameChange(e.target.value)} />
+                                    <input list="names" placeholder="輸入或從選單選擇..." className="w-full p-3 border rounded-lg" value={form.name} onChange={e => handleNameChange(e.target.value)} />
                                     <datalist id="names">{inventory.map((i, idx) => <option key={idx} value={i.品名} />)}</datalist>
-                                   
+                                    {/* 這裡移除下方的 <p> 提示 */}
                                 </div>
 
                                 <div className="flex gap-4">
@@ -294,7 +289,6 @@
                                         </div>
                                         <div className="text-sm text-gray-600 bg-gray-50 p-1 rounded mt-1 flex justify-between">
                                             <span><i className="fa-solid fa-user mr-1"></i> {log.異動者 || '未填寫'}</span>
-                                            {/* 顯示本次異動相關的序號 */}
                                             {log.相關序號 && <span className="truncate max-w-[100px] text-gray-400">SN: {log.相關序號}</span>}
                                         </div>
                                     </div>
