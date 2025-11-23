@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>庫存管理系統 (最新版)</title>
+    <title>庫存管理系統</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -16,7 +16,23 @@
         body { background-color: #f0f2f5; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
         .loader { border: 3px solid #f3f3f3; border-top: 3px solid #3b82f6; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .tab-active { color: #2563eb; border-top: 2px solid #2563eb; }
+        
+        /* 掃描器專用樣式 */
+        #reader video { object-fit: cover; border-radius: 0.5rem; }
+        .scan-line {
+            position: absolute;
+            top: 50%; left: 10%; right: 10%;
+            height: 2px;
+            background: red;
+            box-shadow: 0 0 4px red;
+            z-index: 10;
+            animation: pulse-line 1.5s infinite;
+        }
+        @keyframes pulse-line {
+            0% { opacity: 0.6; box-shadow: 0 0 2px red; }
+            50% { opacity: 1; box-shadow: 0 0 8px red; }
+            100% { opacity: 0.6; box-shadow: 0 0 2px red; }
+        }
     </style>
 </head>
 <body>
@@ -30,20 +46,56 @@
 
         const { useState, useEffect } = React;
 
-        // 掃描器組件
+        // === 優化版掃描器組件 ===
         const Scanner = ({ onScan, onClose }) => {
             useEffect(() => {
                 const html5QrCode = new Html5Qrcode("reader");
-                html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 }, 
-                    (decodedText) => { html5QrCode.stop(); onScan(decodedText); }, 
-                    () => {}
-                );
-                return () => { try { html5QrCode.stop(); } catch(e) {} };
+                
+                // 設定：使用長方形掃描框，更適合一維條碼，避免掃到上下的雜訊
+                const config = { 
+                    fps: 10, 
+                    qrbox: { width: 280, height: 100 }, // 寬扁型偵測區
+                    aspectRatio: 1.0 
+                };
+
+                html5QrCode.start({ facingMode: "environment" }, config, 
+                    (decodedText) => {
+                        html5QrCode.stop().then(() => onScan(decodedText)).catch(err => console.log(err));
+                    }, 
+                    (errorMessage) => { /* ignore scan errors */ }
+                ).catch(err => {
+                    console.error("相機啟動失敗", err);
+                    Swal.fire("無法啟動相機", "請確認瀏覽器權限", "error");
+                });
+
+                return () => { 
+                    try { if(html5QrCode.isScanning) html5QrCode.stop(); html5QrCode.clear(); } catch(e) {} 
+                };
             }, []);
+
             return (
-                <div className="fixed inset-0 bg-black bg-opacity-90 z-50 flex flex-col items-center justify-center p-4">
-                    <div id="reader" className="w-full max-w-sm bg-white rounded overflow-hidden"></div>
-                    <button onClick={onClose} className="mt-6 px-6 py-2 bg-red-600 text-white rounded-full font-bold">取消掃描</button>
+                <div className="fixed inset-0 bg-black bg-opacity-95 z-50 flex flex-col items-center justify-center">
+                    <div className="relative w-full max-w-md p-4">
+                        <h3 className="text-white text-center mb-2 font-bold text-lg">對準條碼</h3>
+                        
+                        <div className="relative rounded-lg overflow-hidden shadow-2xl border border-gray-700 bg-black">
+                            <div id="reader" className="w-full h-64 sm:h-80 bg-black"></div>
+                            
+                            {/* 紅色輔助線 (Visual Guide) */}
+                            <div className="scan-line"></div>
+                            
+                            {/* 掃描框標示 (Optional Box) */}
+                            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[280px] h-[100px] border-2 border-red-500 rounded opacity-50 pointer-events-none box-border"></div>
+                        </div>
+                        
+                        <p className="text-gray-400 text-center mt-4 text-sm">
+                            請將 <span className="text-red-400 font-bold">紅色輔助線</span> 對準您要掃描的條碼中央
+                        </p>
+
+                        <button onClick={onClose} className="mt-8 w-full py-3 bg-gray-800 text-white rounded-lg font-bold border border-gray-600 hover:bg-gray-700 transition">
+                            <i className="fa-solid fa-xmark mr-2"></i> 取消掃描
+                        </button>
+                    </div>
                 </div>
             );
         };
@@ -87,7 +139,6 @@
                 setLoading(false);
             };
 
-            // 相機掃描處理
             const handleCameraScan = (code) => {
                 setScanning(false);
                 setPage('form');
@@ -108,7 +159,6 @@
                 }
             };
 
-            // 手動輸入處理
             const handleManualInput = (e) => {
                 const code = e.target.value;
                 setForm(prev => ({ ...prev, barcode: code }));
@@ -126,7 +176,6 @@
                 }
             };
 
-            // 品名選擇處理
             const handleNameChange = (val) => {
                 setForm(prev => ({ ...prev, name: val }));
                 const item = inventory.find(i => i.品名 === val);
@@ -209,8 +258,7 @@
             return (
                 <div className="pb-20 max-w-md mx-auto bg-gray-50 min-h-screen shadow-xl relative">
                     <div className="bg-blue-700 text-white p-4 sticky top-0 z-20 shadow flex justify-between items-center">
-                        {/* 標題已更新，方便您確認版本 */}
-                        <h1 className="font-bold text-lg"><i className="fa-solid fa-warehouse mr-2"></i>庫存管理系統 (最新版)</h1>
+                        <h1 className="font-bold text-lg"><i className="fa-solid fa-warehouse mr-2"></i>庫存管理</h1>
                         {loading && <div className="loader border-white border-t-transparent"></div>}
                     </div>
 
@@ -270,12 +318,12 @@
                                     <datalist id="names">{inventory.map((i, idx) => <option key={idx} value={i.品名} />)}</datalist>
                                 </div>
 
+                                {/* 數量與警戒值 (警戒值僅在入庫顯示) */}
                                 <div className="flex gap-4">
                                     <div className="flex-1">
                                         <label className="block text-sm font-bold mb-1">數量</label>
                                         <input type="number" className="w-full p-3 border rounded-lg text-center font-bold" value={form.qty} onChange={e => setForm({...form, qty: parseInt(e.target.value)||1})} />
                                     </div>
-                                    {/* 這裡確保只有在入庫時 (IN) 才顯示警戒值 */}
                                     {form.type === 'IN' && (
                                         <div className="flex-1">
                                             <label className="block text-sm font-bold mb-1">警戒值</label>
