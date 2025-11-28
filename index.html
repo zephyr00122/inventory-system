@@ -17,16 +17,11 @@
         .loader { border: 3px solid #f3f3f3; border-top: 3px solid #3b82f6; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         
-        /* 掃描器專用樣式 */
-        #reader video { object-fit: cover; border-radius: 0.5rem; }
+        #reader video { position: relative; z-index: 0; object-fit: cover; border-radius: 0.5rem; }
+        #reader > div { display: none !important; }
         .scan-line {
-            position: absolute;
-            top: 50%; left: 10%; right: 10%;
-            height: 2px;
-            background: red;
-            box-shadow: 0 0 4px red;
-            z-index: 10;
-            animation: pulse-line 1.5s infinite;
+            position: absolute; top: 50%; left: 10%; right: 10%; height: 2px;
+            background: red; box-shadow: 0 0 4px red; z-index: 10; animation: pulse-line 1.5s infinite;
         }
         @keyframes pulse-line {
             0% { opacity: 0.6; box-shadow: 0 0 2px red; }
@@ -44,57 +39,30 @@
         // ==========================================
         const API_URL = "https://script.google.com/macros/s/AKfycbwo5zBN_DP3r5O38WpyrXmDr3rO7Gsircpi32d0kIIlHHaUcpqOhzJgi65RiytuJf83/exec"; 
 
-        const { useState, useEffect } = React;
+        const { useState, useEffect, useMemo } = React;
 
-        // === 優化版掃描器組件 ===
+        // 掃描器組件
         const Scanner = ({ onScan, onClose }) => {
             useEffect(() => {
                 const html5QrCode = new Html5Qrcode("reader");
-                
-                // 設定：使用長方形掃描框，更適合一維條碼，避免掃到上下的雜訊
-                const config = { 
-                    fps: 10, 
-                    qrbox: { width: 280, height: 100 }, // 寬扁型偵測區
-                    aspectRatio: 1.0 
-                };
-
+                const config = { fps: 10, qrbox: { width: 280, height: 100 }, aspectRatio: 1.0 };
                 html5QrCode.start({ facingMode: "environment" }, config, 
-                    (decodedText) => {
-                        html5QrCode.stop().then(() => onScan(decodedText)).catch(err => console.log(err));
-                    }, 
-                    (errorMessage) => { /* ignore scan errors */ }
-                ).catch(err => {
-                    console.error("相機啟動失敗", err);
-                    Swal.fire("無法啟動相機", "請確認瀏覽器權限", "error");
-                });
-
-                return () => { 
-                    try { if(html5QrCode.isScanning) html5QrCode.stop(); html5QrCode.clear(); } catch(e) {} 
-                };
+                    (decodedText) => { html5QrCode.stop().then(() => onScan(decodedText)); }, 
+                    () => {}
+                ).catch(() => Swal.fire("錯誤", "無法啟動相機", "error"));
+                return () => { try { if(html5QrCode.isScanning) html5QrCode.stop(); html5QrCode.clear(); } catch(e) {} };
             }, []);
-
             return (
                 <div className="fixed inset-0 bg-black bg-opacity-95 z-50 flex flex-col items-center justify-center">
                     <div className="relative w-full max-w-md p-4">
                         <h3 className="text-white text-center mb-2 font-bold text-lg">對準條碼</h3>
-                        
                         <div className="relative rounded-lg overflow-hidden shadow-2xl border border-gray-700 bg-black">
                             <div id="reader" className="w-full h-64 sm:h-80 bg-black"></div>
-                            
-                            {/* 紅色輔助線 (Visual Guide) */}
                             <div className="scan-line"></div>
-                            
-                            {/* 掃描框標示 (Optional Box) */}
-                            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[280px] h-[100px] border-2 border-red-500 rounded opacity-50 pointer-events-none box-border"></div>
+                            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[280px] h-[100px] border-2 border-red-500 rounded opacity-50 pointer-events-none box-border z-10"></div>
                         </div>
-                        
-                        <p className="text-gray-400 text-center mt-4 text-sm">
-                            請將 <span className="text-red-400 font-bold">紅色輔助線</span> 對準您要掃描的條碼中央
-                        </p>
-
-                        <button onClick={onClose} className="mt-8 w-full py-3 bg-gray-800 text-white rounded-lg font-bold border border-gray-600 hover:bg-gray-700 transition">
-                            <i className="fa-solid fa-xmark mr-2"></i> 取消掃描
-                        </button>
+                        <p className="text-gray-400 text-center mt-4 text-sm">請將 <span className="text-red-400 font-bold">紅色輔助線</span> 對準條碼中央</p>
+                        <button onClick={onClose} className="mt-8 w-full py-3 bg-gray-800 text-white rounded-lg font-bold border border-gray-600 hover:bg-gray-700 transition"><i className="fa-solid fa-xmark mr-2"></i> 取消掃描</button>
                     </div>
                 </div>
             );
@@ -108,7 +76,6 @@
             const [search, setSearch] = useState('');
             const [scanning, setScanning] = useState(false);
 
-            // 表單狀態
             const [form, setForm] = useState({
                 barcode: '', name: '', qty: 1, type: 'IN', warehouse: '主倉',
                 location: '', position: '', minStock: 5, note: '', modifier: ''
@@ -118,6 +85,14 @@
                 if(API_URL.includes("YOUR_GOOGLE")) Swal.fire("設定錯誤", "請填入 API URL", "error");
                 else loadData();
             }, []);
+
+            // 計算唯一的倉庫、地點、位置清單，用於下拉選單
+            const uniqueOptions = useMemo(() => {
+                const warehouses = [...new Set(inventory.map(i => i.倉庫).filter(Boolean))];
+                const locations = [...new Set(inventory.map(i => i.地點).filter(Boolean))];
+                const positions = [...new Set(inventory.map(i => i.位置).filter(Boolean))];
+                return { warehouses, locations, positions };
+            }, [inventory]);
 
             const loadData = async () => {
                 setLoading(true);
@@ -155,7 +130,7 @@
                     Swal.fire({ icon: 'success', title: '已找到現有商品', text: item.品名, timer: 1000, showConfirmButton: false });
                 } else {
                     setForm(prev => ({ ...prev, barcode: code, name: '' }));
-                    Swal.fire({ icon: 'info', title: '新序號', text: '請輸入或選擇品名以進行歸戶', timer: 1500, showConfirmButton: false });
+                    Swal.fire({ icon: 'info', title: '新序號', text: '請輸入或選擇品名', timer: 1500, showConfirmButton: false });
                 }
             };
 
@@ -178,15 +153,19 @@
 
             const handleNameChange = (val) => {
                 setForm(prev => ({ ...prev, name: val }));
-                const item = inventory.find(i => i.品名 === val);
-                if (item) {
+                // 優化：當選擇品名時，如果該品名只有一個庫存紀錄，自動帶入地點
+                // 如果有多個地點，則不帶入，讓使用者自己選，以免帶錯
+                const matchedItems = inventory.filter(i => i.品名 === val);
+                
+                if (matchedItems.length === 1) {
+                    const item = matchedItems[0];
                     setForm(prev => ({
                         ...prev, 
-                        warehouse: item.倉庫,
-                        location: item.地點, 
-                        position: item.位置, 
-                        minStock: item.警戒值
+                        warehouse: item.倉庫, location: item.地點, position: item.位置, minStock: item.警戒值
                     }));
+                } else if (matchedItems.length > 1) {
+                    // 可以選擇清空地點，提示使用者選擇
+                    // setForm(prev => ({ ...prev, warehouse: '', location: '', position: '' }));
                 }
             };
 
@@ -194,19 +173,17 @@
                 e.preventDefault();
                 if (!form.name) return Swal.fire('錯誤', '請填寫品名', 'warning');
                 
-                // 出庫防呆檢查
                 if (form.type === 'OUT' && form.barcode) {
-                    const currentItem = inventory.find(i => i.品名 === form.name);
-                    if (!currentItem) return Swal.fire('出庫失敗', '庫存中找不到此品項', 'error');
-                    
-                    const existingSerials = currentItem.序號 ? String(currentItem.序號).split(',') : [];
-                    if (!existingSerials.includes(form.barcode)) {
-                        return Swal.fire('出庫失敗', '該項目並無此序號，無法出庫', 'error');
-                    }
+                    // 出庫防呆：這裡需要更嚴謹，因為可能有同名商品在不同地點
+                    // 但有序號的情況下，序號是唯一的，所以直接檢查全庫存即可
+                    const itemExists = inventory.some(i => {
+                        const s = i.序號 ? String(i.序號).split(',') : [];
+                        return s.includes(form.barcode);
+                    });
+                    if (!itemExists) return Swal.fire('出庫失敗', '庫存中找不到此序號', 'error');
                 }
 
                 setLoading(true);
-
                 const data = new URLSearchParams();
                 data.append('action', 'updateStock');
                 data.append('barcode', form.barcode);
@@ -222,20 +199,15 @@
 
                 try {
                     await fetch(API_URL, {
-                        method: 'POST',
-                        mode: 'no-cors',
+                        method: 'POST', mode: 'no-cors',
                         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                         body: data.toString()
                     });
-                    
                     await new Promise(r => setTimeout(r, 2000));
-                    
                     Swal.fire({ icon: 'success', title: '完成', text: '資料已送出', timer: 1500, showConfirmButton: false });
                     setForm(prev => ({ ...prev, name: '', barcode: '', qty: 1, note: '' }));
                     loadData(); 
-                } catch (e) {
-                    Swal.fire('錯誤', '連線失敗', 'error');
-                }
+                } catch (e) { Swal.fire('錯誤', '連線失敗', 'error'); }
                 setLoading(false);
             };
 
@@ -246,8 +218,7 @@
                 const csv = "\uFEFF" + [header, ...rows].join("\n");
                 const a = document.createElement('a');
                 a.href = 'data:text/csv;charset=utf-8,' + encodeURI(csv);
-                a.download = `${title}.csv`;
-                a.click();
+                a.download = `${title}.csv`; a.click();
             };
 
             const filteredList = inventory.filter(i => 
@@ -315,10 +286,9 @@
                                 <div>
                                     <label className="block text-sm font-bold mb-1">品名 *</label>
                                     <input list="names" placeholder="輸入或從選單選擇..." className="w-full p-3 border rounded-lg" value={form.name} onChange={e => handleNameChange(e.target.value)} />
-                                    <datalist id="names">{inventory.map((i, idx) => <option key={idx} value={i.品名} />)}</datalist>
+                                    <datalist id="names">{[...new Set(inventory.map(i => i.品名))].map((name, idx) => <option key={idx} value={name} />)}</datalist>
                                 </div>
 
-                                {/* 數量與警戒值 (警戒值僅在入庫顯示) */}
                                 <div className="flex gap-4">
                                     <div className="flex-1">
                                         <label className="block text-sm font-bold mb-1">數量</label>
@@ -333,9 +303,18 @@
                                 </div>
 
                                 <div className="grid grid-cols-2 gap-3 text-sm">
-                                    <input placeholder="倉庫" className="p-2 border rounded" value={form.warehouse} onChange={e => setForm({...form, warehouse: e.target.value})} />
-                                    <input placeholder="地點" className="p-2 border rounded" value={form.location} onChange={e => setForm({...form, location: e.target.value})} />
-                                    <input placeholder="位置" className="p-2 border rounded" value={form.position} onChange={e => setForm({...form, position: e.target.value})} />
+                                    <div>
+                                        <input list="warehouses" placeholder="倉庫" className="w-full p-2 border rounded" value={form.warehouse} onChange={e => setForm({...form, warehouse: e.target.value})} />
+                                        <datalist id="warehouses">{uniqueOptions.warehouses.map((v, i) => <option key={i} value={v} />)}</datalist>
+                                    </div>
+                                    <div>
+                                        <input list="locations" placeholder="地點" className="w-full p-2 border rounded" value={form.location} onChange={e => setForm({...form, location: e.target.value})} />
+                                        <datalist id="locations">{uniqueOptions.locations.map((v, i) => <option key={i} value={v} />)}</datalist>
+                                    </div>
+                                    <div>
+                                        <input list="positions" placeholder="位置" className="w-full p-2 border rounded" value={form.position} onChange={e => setForm({...form, position: e.target.value})} />
+                                        <datalist id="positions">{uniqueOptions.positions.map((v, i) => <option key={i} value={v} />)}</datalist>
+                                    </div>
                                     <input placeholder="備註" className="p-2 border rounded" value={form.note} onChange={e => setForm({...form, note: e.target.value})} />
                                 </div>
                                 <button onClick={handleSubmit} className={`w-full py-3 rounded-lg text-white font-bold shadow-lg ${form.type === 'IN' ? 'bg-blue-600' : 'bg-orange-600'}`}>確認{form.type === 'IN' ? '入庫' : '出庫'}</button>
