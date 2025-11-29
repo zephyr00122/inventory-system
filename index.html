@@ -42,15 +42,12 @@
 
         const { useState, useEffect, useMemo } = React;
 
-        // 取得當前時間字串 YYYY-MM-DDTHH:mm (用於 input datetime-local)
         const getCurrentDateTime = () => {
             const now = new Date();
-            // 處理時區問題，轉換為本地時間格式
             now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
             return now.toISOString().slice(0, 16);
         };
 
-        // 掃描器組件
         const Scanner = ({ onScan, onClose }) => {
             useEffect(() => {
                 const html5QrCode = new Html5Qrcode("reader");
@@ -78,21 +75,15 @@
         };
 
         const App = () => {
-            const [page, setPage] = useState('list'); // list, form, alert, history
+            const [page, setPage] = useState('list');
             const [inventory, setInventory] = useState([]);
             const [logs, setLogs] = useState([]);
             const [loading, setLoading] = useState(false);
             const [search, setSearch] = useState('');
             const [scanning, setScanning] = useState(false);
 
-            // 紀錄頁面的篩選器狀態
-            const [logFilter, setLogFilter] = useState({
-                keyword: '',
-                date: '',
-                type: ''
-            });
+            const [logFilter, setLogFilter] = useState({ keyword: '', date: '', type: '' });
 
-            // 表單狀態 (增加 customDate)
             const [form, setForm] = useState({
                 barcode: '', name: '', qty: 1, type: 'IN', warehouse: '主倉',
                 location: '', position: '', minStock: 5, note: '', modifier: '',
@@ -131,6 +122,12 @@
                 setLoading(false);
             };
 
+            // 新增：重整並清空搜尋功能
+            const handleRefreshLogs = () => {
+                setLogFilter({ keyword: '', date: '', type: '' });
+                loadLogs();
+            };
+
             const handleCameraScan = (code) => {
                 setScanning(false);
                 setPage('form');
@@ -143,13 +140,11 @@
                     setForm(prev => ({
                         ...prev, barcode: code, name: item.品名, warehouse: item.倉庫,
                         location: item.地點, position: item.位置, minStock: item.警戒值, qty: 1,
-                        customDate: getCurrentDateTime() // 掃描時重置為當下時間
+                        customDate: getCurrentDateTime()
                     }));
                     Swal.fire({ icon: 'success', title: '已找到現有商品', text: item.品名, timer: 1000, showConfirmButton: false });
                 } else {
-                    setForm(prev => ({ 
-                        ...prev, barcode: code, name: '', customDate: getCurrentDateTime()
-                    }));
+                    setForm(prev => ({ ...prev, barcode: code, name: '', customDate: getCurrentDateTime() }));
                     Swal.fire({ icon: 'info', title: '新序號', text: '請輸入或選擇品名', timer: 1500, showConfirmButton: false });
                 }
             };
@@ -207,7 +202,6 @@
                 data.append('minStock', form.minStock);
                 data.append('note', form.note);
                 data.append('modifier', form.modifier);
-                // 傳送自訂時間
                 data.append('customDate', form.customDate);
 
                 try {
@@ -234,29 +228,22 @@
                 a.download = `${title}.csv`; a.click();
             };
 
-            // 庫存搜尋過濾
             const filteredInventory = inventory.filter(i => 
                 (i.品名 && i.品名.toLowerCase().includes(search.toLowerCase())) ||
                 (i.序號 && i.序號.toString().includes(search))
             );
 
-            // 低庫存過濾
             const lowStockItems = inventory.filter(i => parseInt(i.數量) <= parseInt(i.警戒值));
 
-            // 紀錄過濾邏輯
             const filteredLogs = logs.filter(log => {
-                // 1. 物品名稱/序號 搜尋
+                // 為了相容新舊資料，檢查 log.序號 或 log.相關序號
+                const sn = log.序號 || log.相關序號 || '';
                 const matchKeyword = !logFilter.keyword || 
                     (log.品名 && log.品名.includes(logFilter.keyword)) ||
-                    (log.相關序號 && log.相關序號.includes(logFilter.keyword));
-                
-                // 2. 日期搜尋 (比對 YYYY-MM-DD)
+                    (sn && sn.includes(logFilter.keyword));
                 const logDateStr = new Date(log.時間).toISOString().slice(0, 10);
                 const matchDate = !logFilter.date || logDateStr === logFilter.date;
-
-                // 3. 類型搜尋
                 const matchType = !logFilter.type || log.類型 === logFilter.type;
-
                 return matchKeyword && matchDate && matchType;
             });
 
@@ -299,37 +286,22 @@
                         </div>
                     )}
 
-                    {/* === 低庫存告警 (新增頁面) === */}
+                    {/* === 低庫存告警 === */}
                     {page === 'alert' && (
                         <div className="p-4 space-y-4">
                             <div className="flex justify-between items-center p-3 bg-red-50 rounded-lg border border-red-200">
-                                <h2 className="font-bold text-red-700 flex items-center">
-                                    <i className="fa-solid fa-triangle-exclamation mr-2"></i> 低庫存警示 ({lowStockItems.length})
-                                </h2>
-                                <button onClick={() => exportData(lowStockItems, '低庫存報表')} className="bg-red-600 text-white text-xs px-3 py-1.5 rounded-lg shadow">
-                                    匯出報表
-                                </button>
+                                <h2 className="font-bold text-red-700 flex items-center"><i className="fa-solid fa-triangle-exclamation mr-2"></i> 低庫存 ({lowStockItems.length})</h2>
+                                <button onClick={() => exportData(lowStockItems, '低庫存報表')} className="bg-red-600 text-white text-xs px-3 py-1.5 rounded-lg shadow">匯出報表</button>
                             </div>
-                            
                             <div className="space-y-3">
-                                {lowStockItems.length === 0 ? (
-                                    <div className="text-center text-gray-400 mt-10">庫存充足，太棒了！</div>
-                                ) : (
-                                    lowStockItems.map((item, idx) => (
-                                        <div key={idx} className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-red-500">
-                                            <div className="flex justify-between items-center">
-                                                <div>
-                                                    <h3 className="font-bold text-gray-800">{item.品名}</h3>
-                                                    <p className="text-xs text-gray-500">{item.倉庫} {item.地點}</p>
-                                                </div>
-                                                <div className="text-right">
-                                                    <span className="text-2xl font-bold text-red-600">{item.數量}</span>
-                                                    <div className="text-xs text-gray-400">低於 {item.警戒值}</div>
-                                                </div>
-                                            </div>
+                                {lowStockItems.map((item, idx) => (
+                                    <div key={idx} className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-red-500">
+                                        <div className="flex justify-between items-center">
+                                            <div><h3 className="font-bold text-gray-800">{item.品名}</h3><p className="text-xs text-gray-500">{item.倉庫} {item.地點}</p></div>
+                                            <div className="text-right"><span className="text-2xl font-bold text-red-600">{item.數量}</span><div className="text-xs text-gray-400">低於 {item.警戒值}</div></div>
                                         </div>
-                                    ))
-                                )}
+                                    </div>
+                                ))}
                             </div>
                         </div>
                     )}
@@ -342,57 +314,18 @@
                                     <button onClick={() => setForm({...form, type: 'IN'})} className={`py-2 rounded-md font-bold ${form.type === 'IN' ? 'bg-white text-blue-600 shadow' : 'text-gray-500'}`}>入庫</button>
                                     <button onClick={() => setForm({...form, type: 'OUT'})} className={`py-2 rounded-md font-bold ${form.type === 'OUT' ? 'bg-white text-orange-600 shadow' : 'text-gray-500'}`}>出庫</button>
                                 </div>
-                                
-                                {/* 新增：異動時間 */}
-                                <div>
-                                    <label className="block text-sm font-bold text-gray-700 mb-1">異動時間</label>
-                                    <input type="datetime-local" className="w-full p-3 border rounded-lg bg-gray-50 font-mono"
-                                        value={form.customDate} onChange={e => setForm({...form, customDate: e.target.value})} />
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-bold text-gray-700 mb-1">異動者 (操作人員)</label>
-                                    <input type="text" placeholder="請輸入姓名..." className="w-full p-3 border rounded-lg bg-blue-50 focus:bg-white border-blue-200"
-                                        value={form.modifier} onChange={e => setForm({...form, modifier: e.target.value})} />
-                                </div>
-
-                                <div className="flex gap-2">
-                                    <input type="text" placeholder="序號" className="flex-1 p-3 border rounded-lg bg-gray-50" value={form.barcode} onChange={handleManualInput} />
-                                    <button onClick={() => setScanning(true)} className="bg-gray-800 text-white w-12 rounded-lg"><i className="fa-solid fa-qrcode"></i></button>
-                                </div>
-                                
-                                <div>
-                                    <label className="block text-sm font-bold mb-1">品名 *</label>
-                                    <input list="names" placeholder="輸入或從選單選擇..." className="w-full p-3 border rounded-lg" value={form.name} onChange={e => handleNameChange(e.target.value)} />
-                                    <datalist id="names">{[...new Set(inventory.map(i => i.品名))].map((name, idx) => <option key={idx} value={name} />)}</datalist>
-                                </div>
-
+                                <div><label className="block text-sm font-bold text-gray-700 mb-1">異動時間</label><input type="datetime-local" className="w-full p-3 border rounded-lg bg-gray-50 font-mono" value={form.customDate} onChange={e => setForm({...form, customDate: e.target.value})} /></div>
+                                <div><label className="block text-sm font-bold text-gray-700 mb-1">異動者 (操作人員)</label><input type="text" placeholder="請輸入姓名..." className="w-full p-3 border rounded-lg bg-blue-50 focus:bg-white border-blue-200" value={form.modifier} onChange={e => setForm({...form, modifier: e.target.value})} /></div>
+                                <div className="flex gap-2"><input type="text" placeholder="序號" className="flex-1 p-3 border rounded-lg bg-gray-50" value={form.barcode} onChange={handleManualInput} /><button onClick={() => setScanning(true)} className="bg-gray-800 text-white w-12 rounded-lg"><i className="fa-solid fa-qrcode"></i></button></div>
+                                <div><label className="block text-sm font-bold mb-1">品名 *</label><input list="names" placeholder="輸入或從選單選擇..." className="w-full p-3 border rounded-lg" value={form.name} onChange={e => handleNameChange(e.target.value)} /><datalist id="names">{[...new Set(inventory.map(i => i.品名))].map((name, idx) => <option key={idx} value={name} />)}</datalist></div>
                                 <div className="flex gap-4">
-                                    <div className="flex-1">
-                                        <label className="block text-sm font-bold mb-1">數量</label>
-                                        <input type="number" className="w-full p-3 border rounded-lg text-center font-bold" value={form.qty} onChange={e => setForm({...form, qty: parseInt(e.target.value)||1})} />
-                                    </div>
-                                    {form.type === 'IN' && (
-                                        <div className="flex-1">
-                                            <label className="block text-sm font-bold mb-1">警戒值</label>
-                                            <input type="number" className="w-full p-3 border rounded-lg text-center" value={form.minStock} onChange={e => setForm({...form, minStock: parseInt(e.target.value)||0})} />
-                                        </div>
-                                    )}
+                                    <div className="flex-1"><label className="block text-sm font-bold mb-1">數量</label><input type="number" className="w-full p-3 border rounded-lg text-center font-bold" value={form.qty} onChange={e => setForm({...form, qty: parseInt(e.target.value)||1})} /></div>
+                                    {form.type === 'IN' && (<div className="flex-1"><label className="block text-sm font-bold mb-1">警戒值</label><input type="number" className="w-full p-3 border rounded-lg text-center" value={form.minStock} onChange={e => setForm({...form, minStock: parseInt(e.target.value)||0})} /></div>)}
                                 </div>
-
                                 <div className="grid grid-cols-2 gap-3 text-sm">
-                                    <div>
-                                        <input list="warehouses" placeholder="倉庫" className="w-full p-2 border rounded" value={form.warehouse} onChange={e => setForm({...form, warehouse: e.target.value})} />
-                                        <datalist id="warehouses">{uniqueOptions.warehouses.map((v, i) => <option key={i} value={v} />)}</datalist>
-                                    </div>
-                                    <div>
-                                        <input list="locations" placeholder="地點" className="w-full p-2 border rounded" value={form.location} onChange={e => setForm({...form, location: e.target.value})} />
-                                        <datalist id="locations">{uniqueOptions.locations.map((v, i) => <option key={i} value={v} />)}</datalist>
-                                    </div>
-                                    <div>
-                                        <input list="positions" placeholder="位置" className="w-full p-2 border rounded" value={form.position} onChange={e => setForm({...form, position: e.target.value})} />
-                                        <datalist id="positions">{uniqueOptions.positions.map((v, i) => <option key={i} value={v} />)}</datalist>
-                                    </div>
+                                    <div><input list="warehouses" placeholder="倉庫" className="w-full p-2 border rounded" value={form.warehouse} onChange={e => setForm({...form, warehouse: e.target.value})} /><datalist id="warehouses">{uniqueOptions.warehouses.map((v, i) => <option key={i} value={v} />)}</datalist></div>
+                                    <div><input list="locations" placeholder="地點" className="w-full p-2 border rounded" value={form.location} onChange={e => setForm({...form, location: e.target.value})} /><datalist id="locations">{uniqueOptions.locations.map((v, i) => <option key={i} value={v} />)}</datalist></div>
+                                    <div><input list="positions" placeholder="位置" className="w-full p-2 border rounded" value={form.position} onChange={e => setForm({...form, position: e.target.value})} /><datalist id="positions">{uniqueOptions.positions.map((v, i) => <option key={i} value={v} />)}</datalist></div>
                                     <input placeholder="備註" className="p-2 border rounded" value={form.note} onChange={e => setForm({...form, note: e.target.value})} />
                                 </div>
                                 <button onClick={handleSubmit} className={`w-full py-3 rounded-lg text-white font-bold shadow-lg ${form.type === 'IN' ? 'bg-blue-600' : 'bg-orange-600'}`}>確認{form.type === 'IN' ? '入庫' : '出庫'}</button>
@@ -403,9 +336,14 @@
                     {/* === 紀錄查詢 === */}
                     {page === 'history' && (
                         <div className="p-4 space-y-4">
-                            <div className="flex justify-between items-center"><h2 className="font-bold">近期異動</h2><button onClick={() => { loadLogs(); exportData(filteredLogs, '紀錄'); }} className="text-sm text-blue-600 bg-blue-50 px-3 py-1 rounded">重整 & 匯出</button></div>
+                            <div className="flex justify-between items-center">
+                                <h2 className="font-bold">近期異動</h2>
+                                <div className="flex gap-2">
+                                     <button onClick={handleRefreshLogs} className="text-sm bg-blue-100 text-blue-600 px-3 py-1 rounded hover:bg-blue-200">重整</button>
+                                     <button onClick={() => exportData(filteredLogs, '紀錄')} className="text-sm bg-green-100 text-green-600 px-3 py-1 rounded hover:bg-green-200">匯出</button>
+                                </div>
+                            </div>
                             
-                            {/* 新增：紀錄篩選器 */}
                             <div className="bg-white p-3 rounded-lg shadow-sm space-y-2">
                                 <div className="flex gap-2">
                                     <input type="text" placeholder="品名或序號..." className="flex-1 p-2 border rounded text-sm" 
@@ -431,15 +369,19 @@
                                         </div>
                                         <div className="text-sm text-gray-600 bg-gray-50 p-1 rounded mt-1 flex justify-between">
                                             <span><i className="fa-solid fa-user mr-1"></i> {log.異動者 || '未填寫'}</span>
-                                            {log.相關序號 && <span className="truncate max-w-[100px] text-gray-400">SN: {log.相關序號}</span>}
                                         </div>
+                                        {/* 新增：明確顯示序號 */}
+                                        {(log.序號 || log.相關序號) && (
+                                            <div className="text-xs text-gray-500 mt-1 border-t pt-1 border-dashed">
+                                                <i className="fa-solid fa-barcode mr-1"></i>SN: {log.序號 || log.相關序號}
+                                            </div>
+                                        )}
                                     </div>
                                 ))}
                             </div>
                         </div>
                     )}
 
-                    {/* === 底部導航 === */}
                     <div className="fixed bottom-0 w-full bg-white border-t flex justify-around py-2 text-xs text-gray-500 max-w-md">
                         <button onClick={() => setPage('list')} className={`w-full flex flex-col items-center ${page === 'list' ? 'tab-active' : ''}`}><i className="fa-solid fa-list text-xl mb-1"></i> 清單</button>
                         <button onClick={() => setPage('alert')} className={`w-full flex flex-col items-center ${page === 'alert' ? 'tab-active' : ''}`}><i className="fa-solid fa-triangle-exclamation text-xl mb-1"></i> 告警</button>
