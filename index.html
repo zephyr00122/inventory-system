@@ -170,8 +170,6 @@
 
             const handleManualInput = (e) => {
                 const val = e.target.value;
-                // 只有當序號欄位有變動時，才嘗試自動計算數量
-                // 使用者後續可以手動覆蓋數量
                 setForm(prev => ({ 
                     ...prev, 
                     barcode: val,
@@ -267,7 +265,8 @@
                 (i.序號 && i.序號.toString().includes(search))
             );
 
-            const lowStockItems = inventory.filter(i => parseInt(i.數量) <= parseInt(i.警戒值));
+            // 修改：低庫存判斷改為 小於 警戒值 (嚴格小於)
+            const lowStockItems = inventory.filter(i => parseInt(i.數量) < parseInt(i.警戒值));
 
             const filteredLogs = logs.filter(log => {
                 const sn = log.序號 || log.相關序號 || '';
@@ -304,7 +303,8 @@
                             <div className="space-y-3">
                                 {filteredInventory.map((item, idx) => (
                                     <div key={idx} className="bg-white p-4 rounded-xl shadow-sm border relative overflow-hidden">
-                                        {item.數量 <= item.警戒值 && <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-red-500"></div>}
+                                        {/* 修改：紅色警戒條僅在小於時顯示 */}
+                                        {item.數量 < item.警戒值 && <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-red-500"></div>}
                                         <div className="flex justify-between items-start pl-2">
                                             <div className="flex-1">
                                                 <h3 className="font-bold text-gray-800 text-lg">{item.品名}</h3>
@@ -314,8 +314,10 @@
                                                 </div>
                                             </div>
                                             <div className="text-right ml-2">
-                                                <div className={`text-3xl font-bold ${item.數量 <= item.警戒值 ? 'text-red-600' : 'text-blue-600'}`}>{item.數量}</div>
-                                                {item.數量 <= item.警戒值 && <span className="text-xs bg-red-100 text-red-600 px-1 rounded font-bold">補貨</span>}
+                                                {/* 修改：數字顏色僅在小於時變紅 */}
+                                                <div className={`text-3xl font-bold ${item.數量 < item.警戒值 ? 'text-red-600' : 'text-blue-600'}`}>{item.數量}</div>
+                                                {/* 修改：補貨標籤僅在小於時顯示 */}
+                                                {item.數量 < item.警戒值 && <span className="text-xs bg-red-100 text-red-600 px-1 rounded font-bold">補貨</span>}
                                             </div>
                                         </div>
                                     </div>
@@ -365,7 +367,6 @@
                                 <div>
                                     <label className="block text-sm font-bold text-gray-700 mb-1">序號 (可連續掃描或以逗號分隔)</label>
                                     <div className="flex gap-2">
-                                        {/* 修改：移除英文 placeholder */}
                                         <textarea rows="2" placeholder="請掃描或輸入序號 (如: A,B,C)..." className="flex-1 p-3 border rounded-lg bg-gray-50 text-sm font-mono" value={form.barcode} onChange={handleManualInput}></textarea>
                                         <button onClick={() => setScanning(true)} className="bg-gray-800 text-white w-12 rounded-lg h-auto flex items-center justify-center"><i className="fa-solid fa-qrcode"></i></button>
                                     </div>
@@ -376,7 +377,6 @@
                                 <div className="flex gap-4">
                                     <div className="flex-1">
                                         <label className="block text-sm font-bold mb-1">數量</label>
-                                        {/* 修改：移除 readOnly，改為 onChange 手動更新 */}
                                         <input type="number" className="w-full p-3 border rounded-lg text-center font-bold" value={form.qty} onChange={e => setForm({...form, qty: parseInt(e.target.value) || 0})} />
                                     </div>
                                     {form.type === 'IN' && (<div className="flex-1"><label className="block text-sm font-bold mb-1">警戒值</label><input type="number" className="w-full p-3 border rounded-lg text-center" value={form.minStock} onChange={e => setForm({...form, minStock: parseInt(e.target.value)||0})} /></div>)}
