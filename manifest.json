@@ -1,0 +1,16 @@
+{
+  "name": "雲端庫存管理系統",
+  "short_name": "庫存管理",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f3f4f6",
+  "theme_color": "#1d4ed8",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/2897/2897785.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
