@@ -2,8 +2,17 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>庫存管理系統</title>
+    
+    <!-- PWA 相關設定 -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1d4ed8">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="庫存管理">
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/2897/2897785.png">
+
     <script src="https://cdn.tailwindcss.com"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -13,7 +22,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
     <style>
-        body { background-color: #f0f2f5; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        body { background-color: #f0f2f5; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; overscroll-behavior-y: contain; }
         .loader { border: 3px solid #f3f3f3; border-top: 3px solid #3b82f6; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         
@@ -36,11 +45,20 @@
 
     <script type="text/babel">
         // ==========================================
-        // 設定區：請在此處填入您的 Google Apps Script 網址
+        // 設定區：Google Apps Script 網址
         // ==========================================
         const API_URL = "https://script.google.com/macros/s/AKfycbwo5zBN_DP3r5O38WpyrXmDr3rO7Gsircpi32d0kIIlHHaUcpqOhzJgi65RiytuJf83/exec"; 
 
         const { useState, useEffect, useMemo } = React;
+
+        // PWA Service Worker 註冊
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./service-worker.js')
+                    .then(reg => console.log('SW registered:', reg))
+                    .catch(err => console.log('SW registration failed:', err));
+            });
+        }
 
         const getCurrentDateTime = () => {
             const now = new Date();
@@ -265,7 +283,7 @@
                 (i.序號 && i.序號.toString().includes(search))
             );
 
-            // 修改：低庫存判斷改為 小於 警戒值 (嚴格小於)
+            // 修正：低庫存為小於警戒值
             const lowStockItems = inventory.filter(i => parseInt(i.數量) < parseInt(i.警戒值));
 
             const filteredLogs = logs.filter(log => {
@@ -303,7 +321,7 @@
                             <div className="space-y-3">
                                 {filteredInventory.map((item, idx) => (
                                     <div key={idx} className="bg-white p-4 rounded-xl shadow-sm border relative overflow-hidden">
-                                        {/* 修改：紅色警戒條僅在小於時顯示 */}
+                                        {/* 修正：低庫存紅條 */}
                                         {item.數量 < item.警戒值 && <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-red-500"></div>}
                                         <div className="flex justify-between items-start pl-2">
                                             <div className="flex-1">
@@ -314,9 +332,9 @@
                                                 </div>
                                             </div>
                                             <div className="text-right ml-2">
-                                                {/* 修改：數字顏色僅在小於時變紅 */}
+                                                {/* 修正：低庫存文字顏色 */}
                                                 <div className={`text-3xl font-bold ${item.數量 < item.警戒值 ? 'text-red-600' : 'text-blue-600'}`}>{item.數量}</div>
-                                                {/* 修改：補貨標籤僅在小於時顯示 */}
+                                                {/* 修正：補貨標籤 */}
                                                 {item.數量 < item.警戒值 && <span className="text-xs bg-red-100 text-red-600 px-1 rounded font-bold">補貨</span>}
                                             </div>
                                         </div>
