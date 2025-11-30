@@ -54,7 +54,6 @@
                 const config = { fps: 10, qrbox: { width: 280, height: 100 }, aspectRatio: 1.0 };
                 html5QrCode.start({ facingMode: "environment" }, config, 
                     (decodedText) => { 
-                        // 掃描成功後稍微暫停，避免連發太快，但允許繼續掃描
                         html5QrCode.pause();
                         setTimeout(() => html5QrCode.resume(), 1000); 
                         onScan(decodedText); 
@@ -72,7 +71,7 @@
                             <div className="scan-line"></div>
                             <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[280px] h-[100px] border-2 border-red-500 rounded opacity-50 pointer-events-none box-border z-10"></div>
                         </div>
-                        <p className="text-gray-400 text-center mt-4 text-sm">掃描多個條碼可自動以逗號分隔</p>
+                        <p className="text-gray-400 text-center mt-4 text-sm">請將 <span className="text-red-400 font-bold">紅色輔助線</span> 對準條碼中央</p>
                         <button onClick={onClose} className="mt-8 w-full py-3 bg-gray-800 text-white rounded-lg font-bold border border-gray-600 hover:bg-gray-700 transition"><i className="fa-solid fa-check mr-2"></i> 完成掃描</button>
                     </div>
                 </div>
@@ -132,27 +131,15 @@
                 loadLogs();
             };
 
-            // 輔助函數：計算條碼數量
             const countSerials = (barcodeString) => {
                 if (!barcodeString) return 1;
-                // 分割並過濾空字串
                 const count = barcodeString.split(/[\n,]+/).filter(s => s.trim() !== "").length;
                 return count > 0 ? count : 1;
             };
 
             const handleCameraScan = (code) => {
-                // 不關閉掃描器，允許連續掃描
-                // setScanning(false); 
-                // setPage('form'); 
-                
-                // 播放提示音 (可選)
-                // new Audio('beep.mp3').play().catch(()=>{});
-
                 setForm(prev => {
-                    // 如果已經有值，加逗號；否則直接填入
                     const newBarcode = prev.barcode ? `${prev.barcode},${code}` : code;
-                    
-                    // 自動搜尋第一筆資料填入其他欄位 (如果是第一筆掃描)
                     let updateData = {};
                     if (!prev.barcode) {
                         const item = inventory.find(i => {
@@ -167,17 +154,15 @@
                             Swal.fire({ icon: 'success', title: '已找到', text: item.品名, timer: 800, showConfirmButton: false, toast: true, position: 'top' });
                         }
                     }
-
                     return {
                         ...prev, 
                         barcode: newBarcode,
-                        qty: countSerials(newBarcode), // 自動更新數量
+                        qty: countSerials(newBarcode),
                         ...updateData
                     };
                 });
             };
             
-            // 掃描器關閉時跳轉到表單
             const handleCloseScanner = () => {
                 setScanning(false);
                 setPage('form');
@@ -185,13 +170,14 @@
 
             const handleManualInput = (e) => {
                 const val = e.target.value;
+                // 只有當序號欄位有變動時，才嘗試自動計算數量
+                // 使用者後續可以手動覆蓋數量
                 setForm(prev => ({ 
                     ...prev, 
                     barcode: val,
-                    qty: countSerials(val) // 自動更新數量
+                    qty: countSerials(val)
                 }));
                 
-                // 嘗試用第一組序號搜尋
                 const firstCode = val.split(/[\n,]+/)[0];
                 if (firstCode) {
                     const item = inventory.find(i => {
@@ -224,7 +210,6 @@
                 e.preventDefault();
                 if (!form.name) return Swal.fire('錯誤', '請填寫品名', 'warning');
                 
-                // 拆解輸入的序號
                 const inputSerials = form.barcode ? form.barcode.split(/[\n,]+/).map(s=>s.trim()).filter(s=>s) : [];
 
                 if (form.type === 'OUT' && inputSerials.length > 0) {
@@ -232,8 +217,6 @@
                     if (!currentItem) return Swal.fire('出庫失敗', '庫存中找不到此品項', 'error');
                     
                     const existingSerials = currentItem.序號 ? String(currentItem.序號).split(',') : [];
-                    
-                    // 檢查每一個輸入的序號是否都存在
                     const missing = inputSerials.filter(sn => !existingSerials.includes(sn));
                     if (missing.length > 0) {
                         return Swal.fire('出庫失敗', `庫存中找不到序號: ${missing.join(', ')}`, 'error');
@@ -243,7 +226,7 @@
                 setLoading(true);
                 const data = new URLSearchParams();
                 data.append('action', 'updateStock');
-                data.append('barcode', form.barcode); // 傳送原始字串 (含逗號)
+                data.append('barcode', form.barcode);
                 data.append('name', form.name);
                 data.append('qtyChange', form.type === 'IN' ? form.qty : -form.qty);
                 data.append('type', form.type);
@@ -379,11 +362,11 @@
                                 <div><label className="block text-sm font-bold text-gray-700 mb-1">異動時間</label><input type="datetime-local" className="w-full p-3 border rounded-lg bg-gray-50 font-mono" value={form.customDate} onChange={e => setForm({...form, customDate: e.target.value})} /></div>
                                 <div><label className="block text-sm font-bold text-gray-700 mb-1">異動者 (操作人員)</label><input type="text" placeholder="請輸入姓名..." className="w-full p-3 border rounded-lg bg-blue-50 focus:bg-white border-blue-200" value={form.modifier} onChange={e => setForm({...form, modifier: e.target.value})} /></div>
                                 
-                                {/* 序號輸入區 (支援多序號) */}
                                 <div>
                                     <label className="block text-sm font-bold text-gray-700 mb-1">序號 (可連續掃描或以逗號分隔)</label>
                                     <div className="flex gap-2">
-                                        <textarea rows="2" placeholder="Scan or type serials (A, B, C...)" className="flex-1 p-3 border rounded-lg bg-gray-50 text-sm font-mono" value={form.barcode} onChange={handleManualInput}></textarea>
+                                        {/* 修改：移除英文 placeholder */}
+                                        <textarea rows="2" placeholder="請掃描或輸入序號 (如: A,B,C)..." className="flex-1 p-3 border rounded-lg bg-gray-50 text-sm font-mono" value={form.barcode} onChange={handleManualInput}></textarea>
                                         <button onClick={() => setScanning(true)} className="bg-gray-800 text-white w-12 rounded-lg h-auto flex items-center justify-center"><i className="fa-solid fa-qrcode"></i></button>
                                     </div>
                                     <p className="text-xs text-gray-400 mt-1 text-right">已輸入 {countSerials(form.barcode)} 組序號</p>
@@ -391,7 +374,11 @@
 
                                 <div><label className="block text-sm font-bold mb-1">品名 *</label><input list="names" placeholder="輸入或從選單選擇..." className="w-full p-3 border rounded-lg" value={form.name} onChange={e => handleNameChange(e.target.value)} /><datalist id="names">{[...new Set(inventory.map(i => i.品名))].map((name, idx) => <option key={idx} value={name} />)}</datalist></div>
                                 <div className="flex gap-4">
-                                    <div className="flex-1"><label className="block text-sm font-bold mb-1">數量 (自動計算)</label><input type="number" className="w-full p-3 border rounded-lg text-center font-bold bg-gray-100" value={form.qty} readOnly /></div>
+                                    <div className="flex-1">
+                                        <label className="block text-sm font-bold mb-1">數量</label>
+                                        {/* 修改：移除 readOnly，改為 onChange 手動更新 */}
+                                        <input type="number" className="w-full p-3 border rounded-lg text-center font-bold" value={form.qty} onChange={e => setForm({...form, qty: parseInt(e.target.value) || 0})} />
+                                    </div>
                                     {form.type === 'IN' && (<div className="flex-1"><label className="block text-sm font-bold mb-1">警戒值</label><input type="number" className="w-full p-3 border rounded-lg text-center" value={form.minStock} onChange={e => setForm({...form, minStock: parseInt(e.target.value)||0})} /></div>)}
                                 </div>
                                 <div className="grid grid-cols-2 gap-3 text-sm">
