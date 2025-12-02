@@ -4,13 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>庫存管理系統</title>
-    
-    <!-- PWA 相關設定 -->
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#1d4ed8">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="庫存管理">
     <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/2897/2897785.png">
 
     <script src="https://cdn.tailwindcss.com"></script>
@@ -25,18 +22,10 @@
         body { background-color: #f0f2f5; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; overscroll-behavior-y: contain; }
         .loader { border: 3px solid #f3f3f3; border-top: 3px solid #3b82f6; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        
         #reader video { position: relative; z-index: 0; object-fit: cover; border-radius: 0.5rem; }
         #reader > div { display: none !important; }
-        .scan-line {
-            position: absolute; top: 50%; left: 10%; right: 10%; height: 2px;
-            background: red; box-shadow: 0 0 4px red; z-index: 10; animation: pulse-line 1.5s infinite;
-        }
-        @keyframes pulse-line {
-            0% { opacity: 0.6; box-shadow: 0 0 2px red; }
-            50% { opacity: 1; box-shadow: 0 0 8px red; }
-            100% { opacity: 0.6; box-shadow: 0 0 2px red; }
-        }
+        .scan-line { position: absolute; top: 50%; left: 10%; right: 10%; height: 2px; background: red; box-shadow: 0 0 4px red; z-index: 10; animation: pulse-line 1.5s infinite; }
+        @keyframes pulse-line { 0% { opacity: 0.6; box-shadow: 0 0 2px red; } 50% { opacity: 1; box-shadow: 0 0 8px red; } 100% { opacity: 0.6; box-shadow: 0 0 2px red; } }
         .tab-active { color: #2563eb; border-top: 2px solid #2563eb; }
     </style>
 </head>
@@ -51,13 +40,9 @@
 
         const { useState, useEffect, useMemo } = React;
 
-        // PWA Service Worker 註冊
+        // PWA 註冊
         if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./service-worker.js')
-                    .then(reg => console.log('SW registered:', reg))
-                    .catch(err => console.log('SW registration failed:', err));
-            });
+            window.addEventListener('load', () => navigator.serviceWorker.register('./service-worker.js').catch(() => {}));
         }
 
         const getCurrentDateTime = () => {
@@ -71,11 +56,7 @@
                 const html5QrCode = new Html5Qrcode("reader");
                 const config = { fps: 10, qrbox: { width: 280, height: 100 }, aspectRatio: 1.0 };
                 html5QrCode.start({ facingMode: "environment" }, config, 
-                    (decodedText) => { 
-                        html5QrCode.pause();
-                        setTimeout(() => html5QrCode.resume(), 1000); 
-                        onScan(decodedText); 
-                    }, 
+                    (decodedText) => { html5QrCode.pause(); setTimeout(() => html5QrCode.resume(), 1000); onScan(decodedText); }, 
                     () => {}
                 ).catch(() => Swal.fire("錯誤", "無法啟動相機", "error"));
                 return () => { try { if(html5QrCode.isScanning) html5QrCode.stop(); html5QrCode.clear(); } catch(e) {} };
@@ -103,9 +84,7 @@
             const [loading, setLoading] = useState(false);
             const [search, setSearch] = useState('');
             const [scanning, setScanning] = useState(false);
-
             const [logFilter, setLogFilter] = useState({ keyword: '', date: '', type: '' });
-
             const [form, setForm] = useState({
                 barcode: '', name: '', qty: 1, type: 'IN', warehouse: '主倉',
                 location: '', position: '', minStock: 5, note: '', modifier: '',
@@ -144,16 +123,8 @@
                 setLoading(false);
             };
 
-            const handleRefreshLogs = () => {
-                setLogFilter({ keyword: '', date: '', type: '' });
-                loadLogs();
-            };
-
-            const countSerials = (barcodeString) => {
-                if (!barcodeString) return 1;
-                const count = barcodeString.split(/[\n,]+/).filter(s => s.trim() !== "").length;
-                return count > 0 ? count : 1;
-            };
+            const handleRefreshLogs = () => { setLogFilter({ keyword: '', date: '', type: '' }); loadLogs(); };
+            const countSerials = (str) => !str ? 1 : (str.split(/[\n,]+/).filter(s => s.trim() !== "").length || 1);
 
             const handleCameraScan = (code) => {
                 setForm(prev => {
@@ -172,40 +143,23 @@
                             Swal.fire({ icon: 'success', title: '已找到', text: item.品名, timer: 800, showConfirmButton: false, toast: true, position: 'top' });
                         }
                     }
-                    return {
-                        ...prev, 
-                        barcode: newBarcode,
-                        qty: countSerials(newBarcode),
-                        ...updateData
-                    };
+                    return { ...prev, barcode: newBarcode, qty: countSerials(newBarcode), ...updateData };
                 });
             };
             
-            const handleCloseScanner = () => {
-                setScanning(false);
-                setPage('form');
-            };
+            const handleCloseScanner = () => { setScanning(false); setPage('form'); };
 
             const handleManualInput = (e) => {
                 const val = e.target.value;
-                setForm(prev => ({ 
-                    ...prev, 
-                    barcode: val,
-                    qty: countSerials(val)
-                }));
-                
+                setForm(prev => ({ ...prev, barcode: val, qty: countSerials(val) }));
                 const firstCode = val.split(/[\n,]+/)[0];
                 if (firstCode) {
                     const item = inventory.find(i => {
                         const serials = i.序號 ? String(i.序號).split(',') : [];
                         return serials.includes(firstCode);
                     });
-
                     if (item) {
-                        setForm(prev => ({
-                            ...prev, name: item.品名, warehouse: item.倉庫,
-                            location: item.地點, position: item.位置, minStock: item.警戒值
-                        }));
+                        setForm(prev => ({ ...prev, name: item.品名, warehouse: item.倉庫, location: item.地點, position: item.位置, minStock: item.警戒值 }));
                     }
                 }
             };
@@ -215,30 +169,21 @@
                 const matchedItems = inventory.filter(i => i.品名 === val);
                 if (matchedItems.length === 1) {
                     const item = matchedItems[0];
-                    setForm(prev => ({
-                        ...prev, 
-                        warehouse: item.倉庫, location: item.地點, position: item.位置, minStock: item.警戒值
-                    }));
+                    setForm(prev => ({ ...prev, warehouse: item.倉庫, location: item.地點, position: item.位置, minStock: item.警戒值 }));
                 }
             };
 
             const handleSubmit = async (e) => {
                 e.preventDefault();
                 if (!form.name) return Swal.fire('錯誤', '請填寫品名', 'warning');
-                
                 const inputSerials = form.barcode ? form.barcode.split(/[\n,]+/).map(s=>s.trim()).filter(s=>s) : [];
-
                 if (form.type === 'OUT' && inputSerials.length > 0) {
                     const currentItem = inventory.find(i => i.品名 === form.name);
                     if (!currentItem) return Swal.fire('出庫失敗', '庫存中找不到此品項', 'error');
-                    
                     const existingSerials = currentItem.序號 ? String(currentItem.序號).split(',') : [];
                     const missing = inputSerials.filter(sn => !existingSerials.includes(sn));
-                    if (missing.length > 0) {
-                        return Swal.fire('出庫失敗', `庫存中找不到序號: ${missing.join(', ')}`, 'error');
-                    }
+                    if (missing.length > 0) return Swal.fire('出庫失敗', `庫存中找不到序號: ${missing.join(', ')}`, 'error');
                 }
-
                 setLoading(true);
                 const data = new URLSearchParams();
                 data.append('action', 'updateStock');
@@ -255,11 +200,7 @@
                 data.append('customDate', form.customDate);
 
                 try {
-                    await fetch(API_URL, {
-                        method: 'POST', mode: 'no-cors',
-                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                        body: data.toString()
-                    });
+                    await fetch(API_URL, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: data.toString() });
                     await new Promise(r => setTimeout(r, 2000));
                     Swal.fire({ icon: 'success', title: '完成', text: '資料已送出', timer: 1500, showConfirmButton: false });
                     setForm(prev => ({ ...prev, name: '', barcode: '', qty: 1, note: '', customDate: getCurrentDateTime() }));
@@ -273,24 +214,14 @@
                 const header = Object.keys(data[0]).join(",");
                 const rows = data.map(obj => Object.values(obj).map(v => `"${v}"`).join(","));
                 const csv = "\uFEFF" + [header, ...rows].join("\n");
-                const a = document.createElement('a');
-                a.href = 'data:text/csv;charset=utf-8,' + encodeURI(csv);
-                a.download = `${title}.csv`; a.click();
+                const a = document.createElement('a'); a.href = 'data:text/csv;charset=utf-8,' + encodeURI(csv); a.download = `${title}.csv`; a.click();
             };
 
-            const filteredInventory = inventory.filter(i => 
-                (i.品名 && i.品名.toLowerCase().includes(search.toLowerCase())) ||
-                (i.序號 && i.序號.toString().includes(search))
-            );
-
-            // 修正：低庫存為小於警戒值
+            const filteredInventory = inventory.filter(i => (i.品名 && i.品名.toLowerCase().includes(search.toLowerCase())) || (i.序號 && i.序號.toString().includes(search)));
             const lowStockItems = inventory.filter(i => parseInt(i.數量) < parseInt(i.警戒值));
-
             const filteredLogs = logs.filter(log => {
                 const sn = log.序號 || log.相關序號 || '';
-                const matchKeyword = !logFilter.keyword || 
-                    (log.品名 && log.品名.includes(logFilter.keyword)) ||
-                    (sn && sn.includes(logFilter.keyword));
+                const matchKeyword = !logFilter.keyword || (log.品名 && log.品名.includes(logFilter.keyword)) || (sn && sn.includes(logFilter.keyword));
                 const logDateStr = new Date(log.時間).toISOString().slice(0, 10);
                 const matchDate = !logFilter.date || logDateStr === logFilter.date;
                 const matchType = !logFilter.type || log.類型 === logFilter.type;
@@ -306,22 +237,16 @@
 
                     {scanning && <Scanner onScan={handleCameraScan} onClose={handleCloseScanner} />}
 
-                    {/* === 庫存清單 === */}
                     {page === 'list' && (
                         <div className="p-4 space-y-4">
                             <div className="flex gap-2">
                                 <input type="text" placeholder="搜尋..." className="w-full px-4 py-2 border rounded-lg" value={search} onChange={e => setSearch(e.target.value)} />
-                                <button onClick={loadData} className="bg-blue-600 text-white px-4 rounded-lg shadow hover:bg-blue-700">
-                                    <i className="fa-solid fa-rotate-right"></i>
-                                </button>
-                                <button onClick={() => exportData(inventory, '庫存')} className="bg-green-600 text-white px-4 rounded-lg shadow hover:bg-green-700">
-                                    <i className="fa-solid fa-file-export"></i>
-                                </button>
+                                <button onClick={loadData} className="bg-blue-600 text-white px-4 rounded-lg shadow hover:bg-blue-700"><i className="fa-solid fa-rotate-right"></i></button>
+                                <button onClick={() => exportData(inventory, '庫存')} className="bg-green-600 text-white px-4 rounded-lg shadow hover:bg-green-700"><i className="fa-solid fa-file-export"></i></button>
                             </div>
                             <div className="space-y-3">
                                 {filteredInventory.map((item, idx) => (
                                     <div key={idx} className="bg-white p-4 rounded-xl shadow-sm border relative overflow-hidden">
-                                        {/* 修正：低庫存紅條 */}
                                         {item.數量 < item.警戒值 && <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-red-500"></div>}
                                         <div className="flex justify-between items-start pl-2">
                                             <div className="flex-1">
@@ -332,9 +257,7 @@
                                                 </div>
                                             </div>
                                             <div className="text-right ml-2">
-                                                {/* 修正：低庫存文字顏色 */}
                                                 <div className={`text-3xl font-bold ${item.數量 < item.警戒值 ? 'text-red-600' : 'text-blue-600'}`}>{item.數量}</div>
-                                                {/* 修正：補貨標籤 */}
                                                 {item.數量 < item.警戒值 && <span className="text-xs bg-red-100 text-red-600 px-1 rounded font-bold">補貨</span>}
                                             </div>
                                         </div>
@@ -344,18 +267,13 @@
                         </div>
                     )}
 
-                    {/* === 低庫存告警 === */}
                     {page === 'alert' && (
                         <div className="p-4 space-y-4">
                             <div className="flex justify-between items-center p-3 bg-red-50 rounded-lg border border-red-200">
                                 <h2 className="font-bold text-red-700 flex items-center"><i className="fa-solid fa-triangle-exclamation mr-2"></i> 低庫存 ({lowStockItems.length})</h2>
                                 <div className="flex gap-2">
-                                    <button onClick={loadData} className="bg-red-600 text-white px-3 py-1.5 rounded-lg shadow hover:bg-red-700">
-                                        <i className="fa-solid fa-rotate-right"></i>
-                                    </button>
-                                    <button onClick={() => exportData(lowStockItems, '低庫存報表')} className="bg-red-600 text-white px-3 py-1.5 rounded-lg shadow hover:bg-red-700">
-                                        <i className="fa-solid fa-file-export"></i>
-                                    </button>
+                                    <button onClick={loadData} className="bg-red-600 text-white px-3 py-1.5 rounded-lg shadow hover:bg-red-700"><i className="fa-solid fa-rotate-right"></i></button>
+                                    <button onClick={() => exportData(lowStockItems, '低庫存報表')} className="bg-red-600 text-white px-3 py-1.5 rounded-lg shadow hover:bg-red-700"><i className="fa-solid fa-file-export"></i></button>
                                 </div>
                             </div>
                             <div className="space-y-3">
@@ -371,7 +289,6 @@
                         </div>
                     )}
 
-                    {/* === 出入庫作業 === */}
                     {page === 'form' && (
                         <div className="p-4">
                             <div className="bg-white p-5 rounded-xl shadow-sm space-y-5">
@@ -381,22 +298,10 @@
                                 </div>
                                 <div><label className="block text-sm font-bold text-gray-700 mb-1">異動時間</label><input type="datetime-local" className="w-full p-3 border rounded-lg bg-gray-50 font-mono" value={form.customDate} onChange={e => setForm({...form, customDate: e.target.value})} /></div>
                                 <div><label className="block text-sm font-bold text-gray-700 mb-1">異動者 (操作人員)</label><input type="text" placeholder="請輸入姓名..." className="w-full p-3 border rounded-lg bg-blue-50 focus:bg-white border-blue-200" value={form.modifier} onChange={e => setForm({...form, modifier: e.target.value})} /></div>
-                                
-                                <div>
-                                    <label className="block text-sm font-bold text-gray-700 mb-1">序號 (可連續掃描或以逗號分隔)</label>
-                                    <div className="flex gap-2">
-                                        <textarea rows="2" placeholder="請掃描或輸入序號 (如: A,B,C)..." className="flex-1 p-3 border rounded-lg bg-gray-50 text-sm font-mono" value={form.barcode} onChange={handleManualInput}></textarea>
-                                        <button onClick={() => setScanning(true)} className="bg-gray-800 text-white w-12 rounded-lg h-auto flex items-center justify-center"><i className="fa-solid fa-qrcode"></i></button>
-                                    </div>
-                                    <p className="text-xs text-gray-400 mt-1 text-right">已輸入 {countSerials(form.barcode)} 組序號</p>
-                                </div>
-
+                                <div><label className="block text-sm font-bold text-gray-700 mb-1">序號 (可連續掃描或以逗號分隔)</label><div className="flex gap-2"><textarea rows="2" placeholder="請掃描或輸入序號 (如: A,B,C)..." className="flex-1 p-3 border rounded-lg bg-gray-50 text-sm font-mono" value={form.barcode} onChange={handleManualInput}></textarea><button onClick={() => setScanning(true)} className="bg-gray-800 text-white w-12 rounded-lg h-auto flex items-center justify-center"><i className="fa-solid fa-qrcode"></i></button></div><p className="text-xs text-gray-400 mt-1 text-right">已輸入 {countSerials(form.barcode)} 組序號</p></div>
                                 <div><label className="block text-sm font-bold mb-1">品名 *</label><input list="names" placeholder="輸入或從選單選擇..." className="w-full p-3 border rounded-lg" value={form.name} onChange={e => handleNameChange(e.target.value)} /><datalist id="names">{[...new Set(inventory.map(i => i.品名))].map((name, idx) => <option key={idx} value={name} />)}</datalist></div>
                                 <div className="flex gap-4">
-                                    <div className="flex-1">
-                                        <label className="block text-sm font-bold mb-1">數量</label>
-                                        <input type="number" className="w-full p-3 border rounded-lg text-center font-bold" value={form.qty} onChange={e => setForm({...form, qty: parseInt(e.target.value) || 0})} />
-                                    </div>
+                                    <div className="flex-1"><label className="block text-sm font-bold mb-1">數量</label><input type="number" className="w-full p-3 border rounded-lg text-center font-bold" value={form.qty} onChange={e => setForm({...form, qty: parseInt(e.target.value) || 0})} /></div>
                                     {form.type === 'IN' && (<div className="flex-1"><label className="block text-sm font-bold mb-1">警戒值</label><input type="number" className="w-full p-3 border rounded-lg text-center" value={form.minStock} onChange={e => setForm({...form, minStock: parseInt(e.target.value)||0})} /></div>)}
                                 </div>
                                 <div className="grid grid-cols-2 gap-3 text-sm">
@@ -410,39 +315,18 @@
                         </div>
                     )}
 
-                    {/* === 紀錄查詢 === */}
                     {page === 'history' && (
                         <div className="p-4 space-y-4">
                             <div className="flex justify-between items-center">
                                 <h2 className="font-bold">近期異動</h2>
-                                <div className="flex gap-2">
-                                     <button onClick={handleRefreshLogs} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg shadow hover:bg-blue-700">
-                                         <i className="fa-solid fa-rotate-right"></i>
-                                     </button>
-                                     <button onClick={() => exportData(filteredLogs, '紀錄')} className="bg-green-600 text-white px-3 py-1.5 rounded-lg shadow hover:bg-green-700">
-                                         <i className="fa-solid fa-file-export"></i>
-                                     </button>
-                                </div>
+                                <div className="flex gap-2"><button onClick={handleRefreshLogs} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg shadow hover:bg-blue-700"><i className="fa-solid fa-rotate-right"></i></button><button onClick={() => exportData(filteredLogs, '紀錄')} className="bg-green-600 text-white px-3 py-1.5 rounded-lg shadow hover:bg-green-700"><i className="fa-solid fa-file-export"></i></button></div>
                             </div>
-                            
                             <div className="bg-white p-3 rounded-lg shadow-sm space-y-2">
-                                <div className="flex gap-2">
-                                    <input type="text" placeholder="品名或序號..." className="flex-1 p-2 border rounded text-sm" 
-                                        value={logFilter.keyword} onChange={e => setLogFilter({...logFilter, keyword: e.target.value})} />
-                                    <select className="p-2 border rounded text-sm" 
-                                        value={logFilter.type} onChange={e => setLogFilter({...logFilter, type: e.target.value})}>
-                                        <option value="">全部類型</option>
-                                        <option value="IN">入庫</option>
-                                        <option value="OUT">出庫</option>
-                                    </select>
-                                </div>
-                                <input type="date" className="w-full p-2 border rounded text-sm" 
-                                    value={logFilter.date} onChange={e => setLogFilter({...logFilter, date: e.target.value})} />
+                                <div className="flex gap-2"><input type="text" placeholder="品名或序號..." className="flex-1 p-2 border rounded text-sm" value={logFilter.keyword} onChange={e => setLogFilter({...logFilter, keyword: e.target.value})} /><select className="p-2 border rounded text-sm" value={logFilter.type} onChange={e => setLogFilter({...logFilter, type: e.target.value})}><option value="">全部類型</option><option value="IN">入庫</option><option value="OUT">出庫</option></select></div>
+                                <input type="date" className="w-full p-2 border rounded text-sm" value={logFilter.date} onChange={e => setLogFilter({...logFilter, date: e.target.value})} />
                             </div>
-
                             <div className="space-y-3">
-                                {filteredLogs.length === 0 ? <div className="text-center text-gray-400">無符合紀錄</div> : 
-                                    filteredLogs.map((log, idx) => (
+                                {filteredLogs.length === 0 ? <div className="text-center text-gray-400">無符合紀錄</div> : filteredLogs.map((log, idx) => (
                                     <div key={idx} className="bg-white p-3 rounded-lg shadow-sm border-l-4 border-gray-300 flex flex-col gap-1">
                                         <div className="flex justify-between items-start">
                                             <div><div className="font-bold text-lg">{log.品名}</div><div className="text-xs text-gray-500">{new Date(log.時間).toLocaleString()}</div></div>
@@ -451,6 +335,13 @@
                                         <div className="text-sm text-gray-600 bg-gray-50 p-1 rounded mt-1 flex justify-between">
                                             <span><i className="fa-solid fa-user mr-1"></i> {log.異動者 || '未填寫'}</span>
                                         </div>
+                                        {/* 新增：顯示位置資訊 */}
+                                        {(log.倉庫 || log.地點 || log.位置) && (
+                                            <div className="text-xs text-gray-500 flex items-center gap-1">
+                                                <i className="fa-solid fa-map-pin"></i>
+                                                {[log.倉庫, log.地點, log.位置].filter(Boolean).join(' / ')}
+                                            </div>
+                                        )}
                                         {(log.序號 || log.相關序號) && (
                                             <div className="text-xs text-gray-500 mt-1 border-t pt-1 border-dashed break-all">
                                                 <i className="fa-solid fa-barcode mr-1"></i>SN: {log.序號 || log.相關序號}
