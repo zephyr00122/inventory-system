@@ -22,9 +22,10 @@
         body { background-color: #f0f2f5; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; overscroll-behavior-y: contain; }
         .loader { border: 3px solid #f3f3f3; border-top: 3px solid #3b82f6; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
         #reader video { position: relative; z-index: 0; object-fit: cover; border-radius: 0.5rem; }
         #reader > div { display: none !important; }
-        .scan-line { position: absolute; top: 50%; left: 10%; right: 10%; height: 2px; background: red; box-shadow: 0 0 4px red; z-index: 10; animation: pulse-line 1.5s infinite; }
+        .scan-line { position: absolute; top: 50%; left: 5%; right: 5%; height: 2px; background: red; box-shadow: 0 0 4px red; z-index: 10; animation: pulse-line 1.5s infinite; }
         @keyframes pulse-line { 0% { opacity: 0.6; box-shadow: 0 0 2px red; } 50% { opacity: 1; box-shadow: 0 0 8px red; } 100% { opacity: 0.6; box-shadow: 0 0 2px red; } }
         .tab-active { color: #2563eb; border-top: 2px solid #2563eb; }
     </style>
@@ -40,7 +41,6 @@
 
         const { useState, useEffect, useMemo } = React;
 
-        // PWA 註冊
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => navigator.serviceWorker.register('./service-worker.js').catch(() => {}));
         }
@@ -54,11 +54,36 @@
         const Scanner = ({ onScan, onClose }) => {
             useEffect(() => {
                 const html5QrCode = new Html5Qrcode("reader");
-                const config = { fps: 10, qrbox: { width: 280, height: 100 }, aspectRatio: 1.0 };
-                html5QrCode.start({ facingMode: "environment" }, config, 
-                    (decodedText) => { html5QrCode.pause(); setTimeout(() => html5QrCode.resume(), 1000); onScan(decodedText); }, 
+                
+                // 強力掃描設定
+                const config = { 
+                    fps: 15, // 提高掃描頻率
+                    qrbox: { width: 320, height: 200 }, // 加大掃描範圍 (寬320, 高200)
+                    aspectRatio: 1.0,
+                    // 關鍵設定：啟用原生條碼偵測 (大幅提升手機掃描能力)
+                    experimentalFeatures: {
+                        useBarCodeDetectorIfSupported: true
+                    }
+                };
+
+                // 請求較好的相機設定
+                const cameraConfig = {
+                    facingMode: "environment",
+                    focusMode: "continuous" // 嘗試請求連續對焦
+                };
+
+                html5QrCode.start(cameraConfig, config, 
+                    (decodedText) => { 
+                        html5QrCode.pause(); 
+                        setTimeout(() => html5QrCode.resume(), 800); // 縮短暫停時間
+                        onScan(decodedText); 
+                    }, 
                     () => {}
-                ).catch(() => Swal.fire("錯誤", "無法啟動相機", "error"));
+                ).catch((err) => {
+                    console.error(err);
+                    Swal.fire("相機啟動失敗", "請檢查權限或使用 HTTPS 連線", "error");
+                });
+                
                 return () => { try { if(html5QrCode.isScanning) html5QrCode.stop(); html5QrCode.clear(); } catch(e) {} };
             }, []);
             return (
@@ -66,11 +91,14 @@
                     <div className="relative w-full max-w-md p-4">
                         <h3 className="text-white text-center mb-2 font-bold text-lg">連續掃描模式</h3>
                         <div className="relative rounded-lg overflow-hidden shadow-2xl border border-gray-700 bg-black">
-                            <div id="reader" className="w-full h-64 sm:h-80 bg-black"></div>
+                            <div id="reader" className="w-full h-80 bg-black"></div> {/* 加高視窗 */}
                             <div className="scan-line"></div>
-                            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[280px] h-[100px] border-2 border-red-500 rounded opacity-50 pointer-events-none box-border z-10"></div>
+                            {/* 加大紅色框框以符合新的 qrbox */}
+                            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[320px] h-[200px] border-2 border-red-500 rounded opacity-50 pointer-events-none box-border z-10"></div>
                         </div>
-                        <p className="text-gray-400 text-center mt-4 text-sm">請將 <span className="text-red-400 font-bold">紅色輔助線</span> 對準條碼中央</p>
+                        <p className="text-gray-400 text-center mt-4 text-sm">
+                            若條碼有磨損，請試著<span className="text-yellow-400 font-bold">上下移動</span>手機<br/>避開破損區域
+                        </p>
                         <button onClick={onClose} className="mt-8 w-full py-3 bg-gray-800 text-white rounded-lg font-bold border border-gray-600 hover:bg-gray-700 transition"><i className="fa-solid fa-check mr-2"></i> 完成掃描</button>
                     </div>
                 </div>
@@ -317,10 +345,7 @@
 
                     {page === 'history' && (
                         <div className="p-4 space-y-4">
-                            <div className="flex justify-between items-center">
-                                <h2 className="font-bold">近期異動</h2>
-                                <div className="flex gap-2"><button onClick={handleRefreshLogs} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg shadow hover:bg-blue-700"><i className="fa-solid fa-rotate-right"></i></button><button onClick={() => exportData(filteredLogs, '紀錄')} className="bg-green-600 text-white px-3 py-1.5 rounded-lg shadow hover:bg-green-700"><i className="fa-solid fa-file-export"></i></button></div>
-                            </div>
+                            <div className="flex justify-between items-center"><h2 className="font-bold">近期異動</h2><div className="flex gap-2"><button onClick={handleRefreshLogs} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg shadow hover:bg-blue-700"><i className="fa-solid fa-rotate-right"></i></button><button onClick={() => exportData(logs, '紀錄')} className="bg-green-600 text-white px-3 py-1.5 rounded-lg shadow hover:bg-green-700"><i className="fa-solid fa-file-export"></i></button></div></div>
                             <div className="bg-white p-3 rounded-lg shadow-sm space-y-2">
                                 <div className="flex gap-2"><input type="text" placeholder="品名或序號..." className="flex-1 p-2 border rounded text-sm" value={logFilter.keyword} onChange={e => setLogFilter({...logFilter, keyword: e.target.value})} /><select className="p-2 border rounded text-sm" value={logFilter.type} onChange={e => setLogFilter({...logFilter, type: e.target.value})}><option value="">全部類型</option><option value="IN">入庫</option><option value="OUT">出庫</option></select></div>
                                 <input type="date" className="w-full p-2 border rounded text-sm" value={logFilter.date} onChange={e => setLogFilter({...logFilter, date: e.target.value})} />
@@ -335,18 +360,8 @@
                                         <div className="text-sm text-gray-600 bg-gray-50 p-1 rounded mt-1 flex justify-between">
                                             <span><i className="fa-solid fa-user mr-1"></i> {log.異動者 || '未填寫'}</span>
                                         </div>
-                                        {/* 新增：顯示位置資訊 */}
-                                        {(log.倉庫 || log.地點 || log.位置) && (
-                                            <div className="text-xs text-gray-500 flex items-center gap-1">
-                                                <i className="fa-solid fa-map-pin"></i>
-                                                {[log.倉庫, log.地點, log.位置].filter(Boolean).join(' / ')}
-                                            </div>
-                                        )}
-                                        {(log.序號 || log.相關序號) && (
-                                            <div className="text-xs text-gray-500 mt-1 border-t pt-1 border-dashed break-all">
-                                                <i className="fa-solid fa-barcode mr-1"></i>SN: {log.序號 || log.相關序號}
-                                            </div>
-                                        )}
+                                        {(log.倉庫 || log.地點 || log.位置) && (<div className="text-xs text-gray-500 flex items-center gap-1"><i className="fa-solid fa-map-pin"></i>{[log.倉庫, log.地點, log.位置].filter(Boolean).join(' / ')}</div>)}
+                                        {(log.序號 || log.相關序號) && (<div className="text-xs text-gray-500 mt-1 border-t pt-1 border-dashed break-all"><i className="fa-solid fa-barcode mr-1"></i>SN: {log.序號 || log.相關序號}</div>)}
                                     </div>
                                 ))}
                             </div>
