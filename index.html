@@ -34,15 +34,17 @@
             50% { opacity: 1; box-shadow: 0 0 8px red; }
             100% { opacity: 0.6; box-shadow: 0 0 2px red; }
         }
-        /* 新增：掃描成功提示動畫 */
-        .scan-feedback {
-            animation: slide-up 0.3s ease-out;
-        }
-        @keyframes slide-up {
-            from { transform: translateY(100%); opacity: 0; }
-            to { transform: translateY(0); opacity: 1; }
-        }
+        .scan-feedback { animation: slide-up 0.3s ease-out; }
+        @keyframes slide-up { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
         .tab-active { color: #2563eb; border-top: 2px solid #2563eb; }
+        
+        /* 新增：同步狀態指示燈 */
+        .sync-indicator { font-size: 0.75rem; display: flex; align-items: center; gap: 4px; }
+        .sync-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+        .sync-dot.syncing { background-color: #f59e0b; animation: pulse 1s infinite; }
+        .sync-dot.synced { background-color: #10b981; }
+        .sync-dot.error { background-color: #ef4444; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
     </style>
 </head>
 <body>
@@ -68,51 +70,23 @@
 
         const Scanner = ({ onScan, onClose }) => {
             const [lastScanned, setLastScanned] = useState(null);
-
             useEffect(() => {
                 const html5QrCode = new Html5Qrcode("reader");
-                
-                const config = { 
-                    fps: 10, 
-                    qrbox: { width: 280, height: 150 }, 
-                    aspectRatio: 1.0
-                };
-
+                const config = { fps: 10, qrbox: { width: 280, height: 150 }, aspectRatio: 1.0 };
                 html5QrCode.start({ facingMode: "environment" }, config, 
                     (decodedText) => { 
                         html5QrCode.pause();
-                        
-                        // 設定最後掃描到的內容以顯示在畫面上
                         setLastScanned(decodedText);
-                        
-                        // 呼叫父層處理函式
                         onScan(decodedText);
-
-                        // 稍微停頓後繼續掃描
                         setTimeout(() => html5QrCode.resume(), 800); 
                     }, 
-                    (errorMessage) => { }
+                    () => {}
                 ).catch((err) => {
                     console.error("Camera Error:", err);
-                    Swal.fire({
-                        icon: 'error',
-                        title: '相機啟動失敗',
-                        text: '請確認您已允許相機權限，且使用 Safari/Chrome 瀏覽器開啟。',
-                        footer: '<a href="https://support.apple.com/zh-tw/guide/iphone/iphb3621c464/ios" target="_blank">如何開啟權限？</a>'
-                    });
+                    Swal.fire({ icon: 'error', title: '相機啟動失敗', text: '請確認權限或重整頁面。' });
                 });
-                
-                return () => { 
-                    try { 
-                        if(html5QrCode.isScanning) {
-                            html5QrCode.stop().then(() => html5QrCode.clear());
-                        } else {
-                            html5QrCode.clear();
-                        }
-                    } catch(e) { console.error(e); } 
-                };
+                return () => { try { if(html5QrCode.isScanning) html5QrCode.stop().then(() => html5QrCode.clear()); else html5QrCode.clear(); } catch(e) {} };
             }, []);
-
             return (
                 <div className="fixed inset-0 bg-black bg-opacity-95 z-50 flex flex-col items-center justify-center">
                     <div className="relative w-full max-w-md p-4">
@@ -121,19 +95,9 @@
                             <div id="reader" className="w-full h-72 bg-black"></div> 
                             <div className="scan-line"></div>
                             <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[280px] h-[150px] border-2 border-red-500 rounded opacity-50 pointer-events-none box-border z-10"></div>
-                            
-                            {/* 新增：顯示掃描到的序號 */}
-                            {lastScanned && (
-                                <div className="absolute bottom-0 left-0 right-0 bg-green-600 bg-opacity-90 text-white py-2 px-3 text-center scan-feedback z-20">
-                                    <div className="text-xs opacity-80">已讀取</div>
-                                    <div className="font-mono font-bold text-lg truncate">{lastScanned}</div>
-                                </div>
-                            )}
+                            {lastScanned && (<div className="absolute bottom-0 left-0 right-0 bg-green-600 bg-opacity-90 text-white py-2 px-3 text-center scan-feedback z-20"><div className="text-xs opacity-80">已讀取</div><div className="font-mono font-bold text-lg truncate">{lastScanned}</div></div>)}
                         </div>
-                        <p className="text-gray-400 text-center mt-4 text-sm">
-                            請將 <span className="text-red-400 font-bold">紅色輔助線</span> 對準條碼中央<br/>
-                            <span className="text-xs text-gray-500">若無法掃描，請嘗試前後移動手機</span>
-                        </p>
+                        <p className="text-gray-400 text-center mt-4 text-sm">請將 <span className="text-red-400 font-bold">紅色輔助線</span> 對準條碼中央</p>
                         <button onClick={onClose} className="mt-8 w-full py-3 bg-gray-800 text-white rounded-lg font-bold border border-gray-600 hover:bg-gray-700 transition"><i className="fa-solid fa-check mr-2"></i> 完成掃描</button>
                     </div>
                 </div>
@@ -145,6 +109,7 @@
             const [inventory, setInventory] = useState([]);
             const [logs, setLogs] = useState([]);
             const [loading, setLoading] = useState(false);
+            const [syncStatus, setSyncStatus] = useState('idle'); // idle, syncing, synced, error
             const [search, setSearch] = useState('');
             const [scanning, setScanning] = useState(false);
             const [logFilter, setLogFilter] = useState({ keyword: '', date: '', type: '' });
@@ -166,13 +131,36 @@
                 return { warehouses, locations, positions };
             }, [inventory]);
 
-            const loadData = async () => {
-                setLoading(true);
+            // === 優化版讀取函式：快取優先 ===
+            const loadData = async (forceUpdate = false) => {
+                // 1. 先嘗試讀取本地快取
+                const cachedInventory = localStorage.getItem('inventory_cache');
+                if (cachedInventory && !forceUpdate) {
+                    setInventory(JSON.parse(cachedInventory));
+                    // 雖然有快取，但我們還是要在背景更新，所以不設 loading 為 true，而是用 syncStatus 提示
+                    setSyncStatus('syncing');
+                } else {
+                    setLoading(true); // 沒快取或強制更新時，顯示全屏 Loading
+                }
+
                 try {
                     const res = await fetch(`${API_URL}?action=getInventory`);
                     const json = await res.json();
-                    if (json.status === 'success') setInventory(json.data);
-                } catch (e) { console.error(e); }
+                    if (json.status === 'success') {
+                        setInventory(json.data);
+                        // 更新快取
+                        localStorage.setItem('inventory_cache', JSON.stringify(json.data));
+                        setSyncStatus('synced');
+                        
+                        // 3秒後隱藏同步狀態
+                        setTimeout(() => setSyncStatus('idle'), 3000);
+                    }
+                } catch (e) { 
+                    console.error(e);
+                    setSyncStatus('error');
+                    // 如果沒有快取且連線失敗，才跳錯誤
+                    if (!cachedInventory) Swal.fire("連線錯誤", "無法讀取資料", "error");
+                }
                 setLoading(false);
             };
 
@@ -187,6 +175,12 @@
             };
 
             const handleRefreshLogs = () => { setLogFilter({ keyword: '', date: '', type: '' }); loadLogs(); };
+            
+            // 強制重整庫存 (點擊重整按鈕時)
+            const handleRefreshInventory = () => {
+                loadData(true);
+            };
+
             const countSerials = (str) => !str ? 1 : (str.split(/[\n,]+/).filter(s => s.trim() !== "").length || 1);
 
             const handleCameraScan = (code) => {
@@ -203,7 +197,6 @@
                                 name: item.品名, warehouse: item.倉庫,
                                 location: item.地點, position: item.位置, minStock: item.警戒值
                             };
-                            // 移除 SweetAlert 提示，改由相機畫面內的綠色橫條提示，體驗更流暢
                         }
                     }
                     return { ...prev, barcode: newBarcode, qty: countSerials(newBarcode), ...updateData };
@@ -267,9 +260,9 @@
                     await new Promise(r => setTimeout(r, 2000));
                     Swal.fire({ icon: 'success', title: '完成', text: '資料已送出', timer: 1500, showConfirmButton: false });
                     setForm(prev => ({ ...prev, name: '', barcode: '', qty: 1, note: '', customDate: getCurrentDateTime() }));
-                    loadData(); 
-                } catch (e) { Swal.fire('錯誤', '連線失敗', 'error'); }
-                setLoading(false);
+                    // 送出後強制從伺服器更新，確保資料一致
+                    loadData(true); 
+                } catch (e) { Swal.fire('錯誤', '連線失敗', 'error'); setLoading(false); }
             };
 
             const exportData = (data, title) => {
@@ -294,17 +287,24 @@
             return (
                 <div className="pb-20 max-w-md mx-auto bg-gray-50 min-h-screen shadow-xl relative">
                     <div className="bg-blue-700 text-white p-4 sticky top-0 z-20 shadow flex justify-between items-center">
-                        <h1 className="font-bold text-lg"><i className="fa-solid fa-warehouse mr-2"></i>庫存管理</h1>
+                        <h1 className="font-bold text-lg flex items-center">
+                            <i className="fa-solid fa-warehouse mr-2"></i>庫存管理
+                            {/* 同步狀態指示燈 */}
+                            {syncStatus === 'syncing' && <span className="ml-3 sync-indicator text-blue-100"><span className="sync-dot syncing"></span> 更新中...</span>}
+                            {syncStatus === 'synced' && <span className="ml-3 sync-indicator text-green-200"><span className="sync-dot synced"></span> 已更新</span>}
+                            {syncStatus === 'error' && <span className="ml-3 sync-indicator text-red-200"><span className="sync-dot error"></span> 連線失敗</span>}
+                        </h1>
                         {loading && <div className="loader border-white border-t-transparent"></div>}
                     </div>
 
                     {scanning && <Scanner onScan={handleCameraScan} onClose={handleCloseScanner} />}
 
+                    {/* === 庫存清單 === */}
                     {page === 'list' && (
                         <div className="p-4 space-y-4">
                             <div className="flex gap-2">
                                 <input type="text" placeholder="搜尋..." className="w-full px-4 py-2 border rounded-lg" value={search} onChange={e => setSearch(e.target.value)} />
-                                <button onClick={loadData} className="bg-blue-600 text-white px-4 rounded-lg shadow hover:bg-blue-700"><i className="fa-solid fa-rotate-right"></i></button>
+                                <button onClick={handleRefreshInventory} className="bg-blue-600 text-white px-4 rounded-lg shadow hover:bg-blue-700"><i className="fa-solid fa-rotate-right"></i></button>
                                 <button onClick={() => exportData(inventory, '庫存')} className="bg-green-600 text-white px-4 rounded-lg shadow hover:bg-green-700"><i className="fa-solid fa-file-export"></i></button>
                             </div>
                             <div className="space-y-3">
@@ -335,7 +335,7 @@
                             <div className="flex justify-between items-center p-3 bg-red-50 rounded-lg border border-red-200">
                                 <h2 className="font-bold text-red-700 flex items-center"><i className="fa-solid fa-triangle-exclamation mr-2"></i> 低庫存 ({lowStockItems.length})</h2>
                                 <div className="flex gap-2">
-                                    <button onClick={loadData} className="bg-red-600 text-white px-3 py-1.5 rounded-lg shadow hover:bg-red-700"><i className="fa-solid fa-rotate-right"></i></button>
+                                    <button onClick={handleRefreshInventory} className="bg-red-600 text-white px-3 py-1.5 rounded-lg shadow hover:bg-red-700"><i className="fa-solid fa-rotate-right"></i></button>
                                     <button onClick={() => exportData(lowStockItems, '低庫存報表')} className="bg-red-600 text-white px-3 py-1.5 rounded-lg shadow hover:bg-red-700"><i className="fa-solid fa-file-export"></i></button>
                                 </div>
                             </div>
