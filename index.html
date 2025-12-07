@@ -25,11 +25,19 @@
         
         #reader video { position: relative; z-index: 0; object-fit: cover; border-radius: 0.5rem; }
         #reader > div { display: none !important; }
-        .scan-line { position: absolute; top: 50%; left: 5%; right: 5%; height: 2px; background: red; box-shadow: 0 0 4px red; z-index: 10; animation: pulse-line 1.5s infinite; }
-        @keyframes pulse-line { 0% { opacity: 0.6; box-shadow: 0 0 2px red; } 50% { opacity: 1; box-shadow: 0 0 8px red; } 100% { opacity: 0.6; box-shadow: 0 0 2px red; } }
+        .scan-line {
+            position: absolute; top: 50%; left: 5%; right: 5%; height: 2px;
+            background: red; box-shadow: 0 0 4px red; z-index: 10; animation: pulse-line 1.5s infinite;
+        }
+        @keyframes pulse-line {
+            0% { opacity: 0.6; box-shadow: 0 0 2px red; }
+            50% { opacity: 1; box-shadow: 0 0 8px red; }
+            100% { opacity: 0.6; box-shadow: 0 0 2px red; }
+        }
         .scan-feedback { animation: slide-up 0.3s ease-out; }
         @keyframes slide-up { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
         .tab-active { color: #2563eb; border-top: 2px solid #2563eb; }
+        
         .sync-indicator { font-size: 0.75rem; display: flex; align-items: center; gap: 4px; }
         .sync-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
         .sync-dot.syncing { background-color: #f59e0b; animation: pulse 1s infinite; }
@@ -104,7 +112,6 @@
             const [scanning, setScanning] = useState(false);
             const [logFilter, setLogFilter] = useState({ keyword: '', date: '', type: '' });
             
-            // 購物車與全域設定 (初始化時嘗試讀取 LocalStorage)
             const [batchCart, setBatchCart] = useState(() => {
                 const savedCart = localStorage.getItem('inventory_cart');
                 return savedCart ? JSON.parse(savedCart) : [];
@@ -123,8 +130,6 @@
 
             useEffect(() => { loadData(); }, []);
 
-            // === 新增：防斷電保存 ===
-            // 當 batchCart 或 globalSettings 改變時，自動寫入 LocalStorage
             useEffect(() => {
                 localStorage.setItem('inventory_cart', JSON.stringify(batchCart));
             }, [batchCart]);
@@ -133,6 +138,7 @@
                 localStorage.setItem('inventory_settings', JSON.stringify(globalSettings));
             }, [globalSettings]);
 
+            // 提取所有不重複的倉庫、地點、位置，供 datalist 使用
             const uniqueOptions = useMemo(() => {
                 const warehouses = [...new Set(inventory.map(i => i.倉庫).filter(Boolean))];
                 const locations = [...new Set(inventory.map(i => i.地點).filter(Boolean))];
@@ -197,11 +203,12 @@
                         }
                         target.qty = manualQty !== null ? manualQty : (target.qty + 1);
                     } else {
+                        // 新增項目：移除倉庫預設值
                         newCart.unshift({
                             name: existingItem ? existingItem.品名 : '',
                             barcode: (existingItem || !code) ? '' : code,
                             qty: manualQty || 1,
-                            warehouse: existingItem ? existingItem.倉庫 : '主倉',
+                            warehouse: existingItem ? existingItem.倉庫 : '', // 預設為空
                             location: existingItem ? existingItem.地點 : '',
                             position: existingItem ? existingItem.位置 : '',
                             minStock: existingItem ? existingItem.警戒值 : 5,
@@ -214,7 +221,8 @@
             };
 
             const handleCameraScan = (code) => { addToCart(code); };
-            const handleManualAdd = () => { setBatchCart(prev => [{ name: '', barcode: '', qty: 1, warehouse: '主倉', location: '', position: '', minStock: 5, note: '' }, ...prev]); };
+            // 手動新增：倉庫預設為空
+            const handleManualAdd = () => { setBatchCart(prev => [{ name: '', barcode: '', qty: 1, warehouse: '', location: '', position: '', minStock: 5, note: '' }, ...prev]); };
             const handleRemoveItem = (index) => { setBatchCart(prev => prev.filter((_, i) => i !== index)); };
             const handleEditItem = (index) => { setEditingIndex(index); setEditItem({ ...batchCart[index] }); };
             const handleSaveEdit = () => {
@@ -233,13 +241,11 @@
                 if (invalidItem) return Swal.fire('錯誤', '清單中有未填寫品名的項目', 'warning');
 
                 setLoading(true);
-                // 根據 type 決定送出的數量：入庫(+), 出庫(-), 盤點(=)
                 const payload = batchCart.map(item => ({
                     ...item,
                     type: globalSettings.type,
-                    qtyChange: globalSettings.type === 'IN' ? item.qty : (globalSettings.type === 'OUT' ? -item.qty : item.qty),
-                    // 如果是盤點(SET)，qtyChange 實際上是 Target Qty，後端會處理
-                    qty: item.qty // 額外傳送原始數量以供 SET 使用
+                    qtyChange: globalSettings.type === 'IN' ? item.qty : -item.qty,
+                    qty: item.qty
                 }));
 
                 const formData = new URLSearchParams();
@@ -257,7 +263,7 @@
                     await new Promise(r => setTimeout(r, 2000));
                     Swal.fire({ icon: 'success', title: '完成', text: '批量作業已送出', timer: 1500, showConfirmButton: false });
                     setBatchCart([]);
-                    localStorage.removeItem('inventory_cart'); // 送出成功後清除暫存
+                    localStorage.removeItem('inventory_cart');
                     loadData(true);
                 } catch (e) { Swal.fire('錯誤', '連線失敗', 'error'); }
                 setLoading(false);
@@ -283,7 +289,7 @@
             });
 
             return (
-                <div className="pb-24 max-w-md mx-auto bg-gray-50 min-h-screen shadow-xl relative">
+                <div className="pb-28 max-w-md mx-auto bg-gray-50 min-h-screen shadow-xl relative">
                     <div className="bg-blue-700 text-white p-4 sticky top-0 z-20 shadow flex justify-between items-center">
                         <h1 className="font-bold text-lg flex items-center">
                             <i className="fa-solid fa-warehouse mr-2"></i>庫存管理
@@ -303,20 +309,33 @@
 
                     {scanning && <Scanner onScan={handleCameraScan} onClose={() => { setScanning(false); setPage('form'); }} />}
 
+                    {/* === 編輯項目 Modal (支援選單) === */}
                     {editingIndex !== null && (
                         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
                             <div className="bg-white rounded-lg w-full max-w-sm p-4 space-y-3 shadow-xl">
                                 <h3 className="font-bold text-lg border-b pb-2">編輯項目</h3>
-                                <div><label className="text-xs font-bold text-gray-500">品名</label><input list="names" className="w-full p-2 border rounded" value={editItem.name} onChange={e => setEditItem({...editItem, name: e.target.value})} /><datalist id="names">{[...new Set(inventory.map(i => i.品名))].map((name, idx) => <option key={idx} value={name} />)}</datalist></div>
+                                {/* 增加品名選單 */}
+                                <div><label className="text-xs font-bold text-gray-500">品名</label><input list="names" className="w-full p-2 border rounded" value={editItem.name} onChange={e => {
+                                    const val = e.target.value;
+                                    // 編輯時也能自動帶入
+                                    const matched = inventory.filter(i => i.品名 === val);
+                                    let update = { name: val };
+                                    if(matched.length === 1) {
+                                        update = { ...update, warehouse: matched[0].倉庫, location: matched[0].地點, position: matched[0].位置, minStock: matched[0].警戒值 };
+                                    }
+                                    setEditItem({...editItem, ...update});
+                                }} /><datalist id="names">{[...new Set(inventory.map(i => i.品名))].map((name, idx) => <option key={idx} value={name} />)}</datalist></div>
+                                
                                 <div><label className="text-xs font-bold text-gray-500">序號 (逗號分隔)</label><textarea rows="2" className="w-full p-2 border rounded text-sm font-mono" value={editItem.barcode} onChange={e => setEditItem({...editItem, barcode: e.target.value, qty: countSerials(e.target.value) })}></textarea></div>
                                 <div className="flex gap-2">
                                     <div className="flex-1"><label className="text-xs font-bold text-gray-500">數量</label><input type="number" className="w-full p-2 border rounded text-center font-bold" value={editItem.qty} onChange={e => setEditItem({...editItem, qty: parseInt(e.target.value)||0})} /></div>
                                     <div className="flex-1"><label className="text-xs font-bold text-gray-500">警戒值</label><input type="number" className="w-full p-2 border rounded text-center" value={editItem.minStock} onChange={e => setEditItem({...editItem, minStock: parseInt(e.target.value)||0})} /></div>
                                 </div>
                                 <div className="grid grid-cols-2 gap-2 text-sm">
-                                    <input list="warehouses" placeholder="倉庫" className="p-2 border rounded" value={editItem.warehouse} onChange={e => setEditItem({...editItem, warehouse: e.target.value})} />
-                                    <input list="locations" placeholder="地點" className="p-2 border rounded" value={editItem.location} onChange={e => setEditItem({...editItem, location: e.target.value})} />
-                                    <input list="positions" placeholder="位置" className="p-2 border rounded" value={editItem.position} onChange={e => setEditItem({...editItem, position: e.target.value})} />
+                                    {/* 增加倉庫/地點/位置選單 */}
+                                    <div><input list="warehouses" placeholder="倉庫" className="w-full p-2 border rounded" value={editItem.warehouse} onChange={e => setEditItem({...editItem, warehouse: e.target.value})} /><datalist id="warehouses">{uniqueOptions.warehouses.map((v, i) => <option key={i} value={v} />)}</datalist></div>
+                                    <div><input list="locations" placeholder="地點" className="w-full p-2 border rounded" value={editItem.location} onChange={e => setEditItem({...editItem, location: e.target.value})} /><datalist id="locations">{uniqueOptions.locations.map((v, i) => <option key={i} value={v} />)}</datalist></div>
+                                    <div><input list="positions" placeholder="位置" className="w-full p-2 border rounded" value={editItem.position} onChange={e => setEditItem({...editItem, position: e.target.value})} /><datalist id="positions">{uniqueOptions.positions.map((v, i) => <option key={i} value={v} />)}</datalist></div>
                                     <input placeholder="備註" className="p-2 border rounded" value={editItem.note} onChange={e => setEditItem({...editItem, note: e.target.value})} />
                                 </div>
                                 <div className="flex gap-2 pt-2">
@@ -327,6 +346,7 @@
                         </div>
                     )}
 
+                    {/* === 庫存清單 === */}
                     {page === 'list' && (
                         <div className="p-4 space-y-4">
                             <div className="flex gap-2">
@@ -379,14 +399,12 @@
                         </div>
                     )}
 
-                    {/* === 購物車 (含盤點模式) === */}
                     {page === 'form' && (
                         <div className="flex flex-col h-full">
                             <div className="bg-white p-4 shadow-sm z-10 space-y-3">
                                 <div className="grid grid-cols-3 gap-2 p-1 bg-gray-100 rounded-lg">
                                     <button onClick={() => setGlobalSettings({...globalSettings, type: 'IN'})} className={`py-2 rounded-md font-bold text-sm transition-all ${globalSettings.type === 'IN' ? 'bg-blue-600 text-white shadow' : 'text-gray-500'}`}>入庫</button>
                                     <button onClick={() => setGlobalSettings({...globalSettings, type: 'OUT'})} className={`py-2 rounded-md font-bold text-sm transition-all ${globalSettings.type === 'OUT' ? 'bg-orange-600 text-white shadow' : 'text-gray-500'}`}>出庫</button>
-                                    {/* 新增：盤點按鈕 */}
                                     <button onClick={() => setGlobalSettings({...globalSettings, type: 'SET'})} className={`py-2 rounded-md font-bold text-sm transition-all ${globalSettings.type === 'SET' ? 'bg-purple-600 text-white shadow' : 'text-gray-500'}`}>盤點</button>
                                 </div>
                                 <div className="flex gap-2">
@@ -411,7 +429,6 @@
                                                 <div className="text-xs text-gray-400">{item.warehouse} {item.location}</div>
                                             </div>
                                             <div className="flex items-center gap-3">
-                                                {/* 根據模式顯示不同的數量前綴 */}
                                                 <div className={`text-xl font-bold ${globalSettings.type === 'IN' ? 'text-blue-600' : globalSettings.type === 'OUT' ? 'text-orange-600' : 'text-purple-600'}`}>
                                                     {globalSettings.type === 'SET' ? '盤:' : 'x'}{item.qty}
                                                 </div>
@@ -441,10 +458,10 @@
                         <div className="p-4 space-y-4">
                             <div className="flex justify-between items-center"><h2 className="font-bold">近期異動</h2><div className="flex gap-2"><button onClick={handleRefreshLogs} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg shadow hover:bg-blue-700"><i className="fa-solid fa-rotate-right"></i></button><button onClick={() => exportData(logs, '紀錄')} className="bg-green-600 text-white px-3 py-1.5 rounded-lg shadow hover:bg-green-700"><i className="fa-solid fa-file-export"></i></button></div></div>
                             <div className="bg-white p-3 rounded-lg shadow-sm space-y-2">
-                                <div className="flex gap-2"><input type="text" placeholder="品名或序號..." className="flex-1 p-2 border rounded text-sm" value={logFilter.keyword} onChange={e => setLogFilter({...logFilter, keyword: e.target.value})} /><select className="p-2 border rounded text-sm" value={logFilter.type} onChange={e => setLogFilter({...logFilter, type: e.target.value})}><option value="">全部類型</option><option value="IN">入庫</option><option value="OUT">出庫</option><option value="SET">盤點</option></select></div>
+                                <div className="flex gap-2"><input type="text" placeholder="品名或序號..." className="flex-1 p-2 border rounded text-sm" value={logFilter.keyword} onChange={e => setLogFilter({...logFilter, keyword: e.target.value})} /><select className="p-2 border rounded text-sm" value={logFilter.type} onChange={e => setLogFilter({...logFilter, type: e.target.value})}><option value="">全部類型</option><option value="IN">入庫</option><option value="OUT">出庫</option></select></div>
                                 <input type="date" className="w-full p-2 border rounded text-sm" value={logFilter.date} onChange={e => setLogFilter({...logFilter, date: e.target.value})} />
                             </div>
-                            <div className="space-y-3">{filteredLogs.map((log, idx) => (<div key={idx} className="bg-white p-3 rounded-lg shadow-sm border-l-4 border-gray-300 flex flex-col gap-1"><div className="flex justify-between items-start"><div><div className="font-bold text-lg">{log.品名}</div><div className="text-xs text-gray-500">{new Date(log.時間).toLocaleString()}</div></div><div className="text-right"><span className={`block font-bold text-lg ${log.類型 === 'IN' ? 'text-blue-600' : log.類型 === 'OUT' ? 'text-orange-600' : 'text-purple-600'}`}>{log.類型 === 'IN' ? '+' : log.類型 === 'OUT' ? '-' : ''}{log.變動數量}</span><span className="text-xs text-gray-400">餘 {log.結餘}</span></div></div><div className="text-sm text-gray-600 bg-gray-50 p-1 rounded mt-1 flex justify-between"><span><i className="fa-solid fa-user mr-1"></i> {log.異動者 || '未填寫'}</span><span>{log.類型.includes('盤點') ? <span className='text-purple-600 font-bold'>盤點</span> : log.類型 === 'IN' ? '入庫' : '出庫'}</span></div>{(log.倉庫 || log.地點 || log.位置) && (<div className="text-xs text-gray-500 flex items-center gap-1"><i className="fa-solid fa-map-pin"></i>{[log.倉庫, log.地點, log.位置].filter(Boolean).join(' / ')}</div>)}{(log.序號 || log.相關序號) && (<div className="text-xs text-gray-500 mt-1 border-t pt-1 border-dashed break-all"><i className="fa-solid fa-barcode mr-1"></i>SN: {log.序號 || log.相關序號}</div>)}</div>))}</div>
+                            <div className="space-y-3">{filteredLogs.map((log, idx) => (<div key={idx} className="bg-white p-3 rounded-lg shadow-sm border-l-4 border-gray-300 flex flex-col gap-1"><div className="flex justify-between items-start"><div><div className="font-bold text-lg">{log.品名}</div><div className="text-xs text-gray-500">{new Date(log.時間).toLocaleString()}</div></div><div className="text-right"><span className={`block font-bold text-lg ${log.類型 === 'IN' ? 'text-blue-600' : log.類型 === 'OUT' ? 'text-orange-600' : 'text-purple-600'}`}>{log.變動數量 > 0 ? '+' : ''}{log.變動數量}</span><span className="text-xs text-gray-400">餘 {log.結餘}</span></div></div><div className="text-sm text-gray-600 bg-gray-50 p-1 rounded mt-1 flex justify-between"><span><i className="fa-solid fa-user mr-1"></i> {log.異動者 || '未填寫'}</span><span>{log.類型.includes('盤點') ? <span className='text-purple-600 font-bold'>盤點</span> : log.類型 === 'IN' ? '入庫' : '出庫'}</span></div>{(log.倉庫 || log.地點 || log.位置) && (<div className="text-xs text-gray-500 flex items-center gap-1"><i className="fa-solid fa-map-pin"></i>{[log.倉庫, log.地點, log.位置].filter(Boolean).join(' / ')}</div>)}{(log.序號 || log.相關序號) && (<div className="text-xs text-gray-500 mt-1 border-t pt-1 border-dashed break-all"><i className="fa-solid fa-barcode mr-1"></i>SN: {log.序號 || log.相關序號}</div>)}</div>))}</div>
                         </div>
                     )}
 
