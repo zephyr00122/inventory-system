@@ -39,6 +39,12 @@
         
         /* 底部導航動畫 */
         .nav-icon { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .sync-indicator { font-size: 0.75rem; display: flex; align-items: center; gap: 4px; }
+        .sync-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+        .sync-dot.syncing { background-color: #f59e0b; animation: pulse 1s infinite; }
+        .sync-dot.synced { background-color: #10b981; }
+        .sync-dot.error { background-color: #ef4444; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
     </style>
 </head>
 <body>
@@ -264,7 +270,7 @@
             });
 
             return (
-                <div className="pb-28 max-w-md mx-auto bg-gray-50 min-h-screen shadow-xl relative">
+                <div className="pb-24 max-w-md mx-auto bg-gray-50 min-h-screen shadow-xl relative">
                     <div className="bg-blue-700 text-white p-4 sticky top-0 z-20 shadow flex justify-between items-center">
                         <h1 className="font-bold text-lg flex items-center">
                             <i className="fa-solid fa-warehouse mr-2"></i>庫存管理
@@ -272,12 +278,20 @@
                             {syncStatus === 'synced' && <span className="ml-3 sync-indicator text-green-200"><span className="sync-dot synced"></span> 已更新</span>}
                             {syncStatus === 'error' && <span className="ml-3 sync-indicator text-red-200"><span className="sync-dot error"></span> 連線失敗</span>}
                         </h1>
-                        <button onClick={() => setScanning(true)} className="text-white text-xl"><i className="fa-solid fa-qrcode"></i></button>
+                        
+                        {/* 修正：僅在 page === 'form' 時顯示掃描按鈕 */}
+                        {page === 'form' && (
+                            <button onClick={() => setScanning(true)} className="text-white text-xl">
+                                <i className="fa-solid fa-qrcode"></i>
+                            </button>
+                        )}
+                        
                         {loading && <div className="loader border-white border-t-transparent absolute right-14"></div>}
                     </div>
 
                     {scanning && <Scanner onScan={handleCameraScan} onClose={() => { setScanning(false); setPage('form'); }} />}
 
+                    {/* === 編輯項目 Modal === */}
                     {editingIndex !== null && (
                         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
                             <div className="bg-white rounded-lg w-full max-w-sm p-4 space-y-3 shadow-xl">
@@ -302,6 +316,7 @@
                         </div>
                     )}
 
+                    {/* === 庫存清單 === */}
                     {page === 'list' && (
                         <div className="p-4 space-y-4">
                             <div className="flex gap-2">
@@ -332,8 +347,10 @@
                         </div>
                     )}
 
+                    {/* === 批量作業 (購物車模式) === */}
                     {page === 'form' && (
                         <div className="flex flex-col h-full">
+                            {/* 頂部全域設定 */}
                             <div className="bg-white p-4 shadow-sm z-10 space-y-3">
                                 <div className="grid grid-cols-2 gap-2 p-1 bg-gray-100 rounded-lg">
                                     <button onClick={() => setGlobalSettings({...globalSettings, type: 'IN'})} className={`py-2 rounded-md font-bold transition-all ${globalSettings.type === 'IN' ? 'bg-blue-600 text-white shadow' : 'text-gray-500'}`}>入庫</button>
@@ -346,7 +363,8 @@
                                 <button onClick={handleManualAdd} className="w-full py-2 bg-gray-100 text-gray-600 rounded-lg border border-dashed border-gray-300 hover:bg-gray-200 text-sm font-bold"><i className="fa-solid fa-plus mr-1"></i> 手動新增項目</button>
                             </div>
 
-                            <div className="flex-1 overflow-y-auto p-4 space-y-3 pb-32">
+                            {/* 中間清單區域 */}
+                            <div className="flex-1 overflow-y-auto p-4 space-y-3 pb-20">
                                 {batchCart.length === 0 ? (
                                     <div className="text-center text-gray-400 mt-10 space-y-2">
                                         <i className="fa-solid fa-basket-shopping text-4xl text-gray-200"></i>
@@ -354,7 +372,7 @@
                                     </div>
                                 ) : (
                                     batchCart.map((item, idx) => (
-                                        <div key={idx} className="bg-white p-3 rounded-lg shadow-sm border border-gray-100 flex items-center justify-between">
+                                        <div key={idx} className="bg-white p-3 rounded-lg shadow-sm border border-gray-100 flex items-center justify-between animate-fade-in">
                                             <div className="flex-1" onClick={() => handleEditItem(idx)}>
                                                 <div className="font-bold text-gray-800">{item.name || <span className="text-red-400 italic">未輸入名稱</span>}</div>
                                                 <div className="text-xs text-gray-500 truncate max-w-[200px]">{item.barcode}</div>
@@ -369,8 +387,9 @@
                                 )}
                             </div>
 
+                            {/* 底部送出按鈕 */}
                             {batchCart.length > 0 && (
-                                <div className="fixed bottom-24 left-0 w-full px-4 z-20">
+                                <div className="fixed bottom-16 left-0 w-full bg-white p-4 border-t shadow-lg z-20">
                                     <button onClick={handleBatchSubmit} className={`w-full py-3 rounded-xl text-white font-bold shadow-lg text-lg flex items-center justify-center gap-2 ${globalSettings.type === 'IN' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-orange-600 hover:bg-orange-700'}`}>
                                         <i className="fa-solid fa-paper-plane"></i> 確認{globalSettings.type === 'IN' ? '入庫' : '出庫'} ({batchCart.length} 筆)
                                     </button>
@@ -379,6 +398,7 @@
                         </div>
                     )}
 
+                    {/* === 告警與紀錄 (保持原樣，僅調整按鈕圖示) === */}
                     {page === 'alert' && (
                         <div className="p-4 space-y-4">
                             <div className="flex justify-between items-center p-3 bg-red-50 rounded-lg border border-red-200">
@@ -400,7 +420,6 @@
                         </div>
                     )}
 
-                    {/* 統一風格的底部導航 */}
                     <div className="fixed bottom-0 w-full bg-white border-t flex justify-around py-2 text-xs text-gray-500 max-w-md shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-30 pb-4">
                         <button onClick={() => setPage('list')} className={`flex flex-col items-center w-full ${page === 'list' ? 'text-blue-600' : 'text-gray-400'}`}>
                             <div className={`w-10 h-10 rounded-full flex items-center justify-center -mt-6 border-4 border-white shadow-lg nav-icon transition-transform ${page === 'list' ? 'bg-blue-600 text-white scale-110' : 'bg-gray-500 text-white'}`}>
