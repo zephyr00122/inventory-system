@@ -23,18 +23,10 @@
         body { background-color: #f0f2f5; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; overscroll-behavior-y: contain; }
         .loader { border: 3px solid #f3f3f3; border-top: 3px solid #3b82f6; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        
         #reader video { position: relative; z-index: 0; object-fit: cover; border-radius: 0.5rem; }
         #reader > div { display: none !important; }
-        .scan-line {
-            position: absolute; top: 50%; left: 5%; right: 5%; height: 2px;
-            background: red; box-shadow: 0 0 4px red; z-index: 10; animation: pulse-line 1.5s infinite;
-        }
-        @keyframes pulse-line {
-            0% { opacity: 0.6; box-shadow: 0 0 2px red; }
-            50% { opacity: 1; box-shadow: 0 0 8px red; }
-            100% { opacity: 0.6; box-shadow: 0 0 2px red; }
-        }
+        .scan-line { position: absolute; top: 50%; left: 5%; right: 5%; height: 2px; background: red; box-shadow: 0 0 4px red; z-index: 10; animation: pulse-line 1.5s infinite; }
+        @keyframes pulse-line { 0% { opacity: 0.6; box-shadow: 0 0 2px red; } 50% { opacity: 1; box-shadow: 0 0 8px red; } 100% { opacity: 0.6; box-shadow: 0 0 2px red; } }
         .scan-feedback { animation: slide-up 0.3s ease-out; }
         @keyframes slide-up { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
         .tab-active { color: #2563eb; border-top: 2px solid #2563eb; }
@@ -43,7 +35,6 @@
         .sync-dot.syncing { background-color: #f59e0b; animation: pulse 1s infinite; }
         .sync-dot.synced { background-color: #10b981; }
         .sync-dot.error { background-color: #ef4444; }
-        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
     </style>
 </head>
 <body>
@@ -373,7 +364,12 @@
                                     <div><input list="list-warehouses" placeholder="倉庫" className="w-full p-2 border rounded" value={editItem.warehouse} onChange={e => setEditItem({...editItem, warehouse: e.target.value})} /></div>
                                     <div><input list="list-locations" placeholder="地點" className="w-full p-2 border rounded" value={editItem.location} onChange={e => setEditItem({...editItem, location: e.target.value})} /></div>
                                     <div><input list="list-positions" placeholder="位置" className="w-full p-2 border rounded" value={editItem.position} onChange={e => setEditItem({...editItem, position: e.target.value})} /></div>
-                                    <input placeholder="備註" className="p-2 border rounded" value={editItem.note} onChange={e => setEditItem({...editItem, note: e.target.value})} />
+                                    <input 
+                                        placeholder={globalSettings.type === 'OUT' ? "使用地點" : "備註"} 
+                                        className="p-2 border rounded" 
+                                        value={editItem.note} 
+                                        onChange={e => setEditItem({...editItem, note: e.target.value})} 
+                                    />
                                 </div>
                                 <div className="flex gap-2 pt-2">
                                     <button onClick={() => setEditingIndex(null)} className="flex-1 py-2 bg-gray-200 rounded text-gray-700">取消</button>
@@ -407,6 +403,7 @@
                                                 <div className="text-sm text-gray-500 mt-1">
                                                     <p className="break-all"><i className="fa-solid fa-barcode w-5 text-center"></i> {item.序號 || '-'}</p>
                                                     <p><i className="fa-solid fa-map-pin w-5 text-center"></i> {item.倉庫} {item.地點} {item.位置}</p>
+                                                    {/* 顯示備註 */}
                                                     {item.備註 && <p className="mt-1 text-gray-600"><i className="fa-solid fa-circle-info w-5 text-center"></i> {item.備註}</p>}
                                                 </div>
                                             </div>
@@ -421,7 +418,6 @@
                         </div>
                     )}
 
-                    {/* === 告警 === */}
                     {page === 'alert' && (
                         <div className="p-4 space-y-4">
                             <div className="flex justify-between items-center p-3 bg-red-50 rounded-lg border border-red-200">
@@ -444,7 +440,6 @@
                         </div>
                     )}
 
-                    {/* === 購物車模式 === */}
                     {page === 'form' && (
                         <div className="flex flex-col h-full">
                             <div className="bg-white p-4 shadow-sm z-10 space-y-3">
@@ -473,6 +468,8 @@
                                                 <div className="font-bold text-gray-800">{item.name || <span className="text-red-400 italic">未輸入名稱</span>}</div>
                                                 <div className="text-xs text-gray-500 truncate max-w-[200px]">{item.barcode}</div>
                                                 <div className="text-xs text-gray-400">{item.warehouse} {item.location} {item.position}</div>
+                                                {/* 購物車中的備註預覽 (動態標籤) */}
+                                                {item.note && <div className="text-xs text-gray-500 mt-1"><i className={`fa-solid ${globalSettings.type === 'OUT' ? 'fa-location-dot' : 'fa-comment'} mr-1`}></i> {globalSettings.type === 'OUT' ? '使用地點' : '備註'}: {item.note}</div>}
                                             </div>
                                             <div className="flex items-center gap-3">
                                                 <div className={`text-xl font-bold ${globalSettings.type === 'IN' ? 'text-blue-600' : globalSettings.type === 'OUT' ? 'text-orange-600' : 'text-purple-600'}`}>
@@ -507,7 +504,52 @@
                                 <div className="flex gap-2"><input type="text" placeholder="品名或序號..." className="flex-1 p-2 border rounded text-sm" value={logFilter.keyword} onChange={e => setLogFilter({...logFilter, keyword: e.target.value})} /><select className="p-2 border rounded text-sm" value={logFilter.type} onChange={e => setLogFilter({...logFilter, type: e.target.value})}><option value="">全部類型</option><option value="IN">入庫</option><option value="OUT">出庫</option></select></div>
                                 <input type="date" className="w-full p-2 border rounded text-sm" value={logFilter.date} onChange={e => setLogFilter({...logFilter, date: e.target.value})} />
                             </div>
-                            <div className="space-y-3">{filteredLogs.map((log, idx) => (<div key={idx} className="bg-white p-3 rounded-lg shadow-sm border-l-4 border-gray-300 flex flex-col gap-1"><div className="flex justify-between items-start"><div><div className="font-bold text-lg">{log.品名}</div><div className="text-xs text-gray-500">{new Date(log.時間).toLocaleString()}</div></div><div className="text-right"><span className={`block font-bold text-lg ${log.類型 === 'IN' ? 'text-blue-600' : log.類型 === 'OUT' ? 'text-orange-600' : 'text-purple-600'}`}>{log.變動數量 > 0 ? '+' : ''}{log.變動數量}</span><span className="text-xs text-gray-400">餘 {log.結餘}</span></div></div><div className="text-sm text-gray-600 bg-gray-50 p-1 rounded mt-1 flex flex-col gap-1"><div className="flex justify-between"><span><i className="fa-solid fa-user mr-1"></i> {log.異動者 || '未填寫'}</span><span>{log.類型.includes('盤點') ? <span className='text-purple-600 font-bold'>盤點</span> : log.類型 === 'IN' ? '入庫' : '出庫'}</span></div>{log.備註 && <div className="text-gray-500 text-xs"><i className="fa-solid fa-circle-info mr-1"></i>{log.備註}</div>}</div>{(log.倉庫 || log.地點 || log.位置) && (<div className="text-xs text-gray-500 flex items-center gap-1"><i className="fa-solid fa-map-pin"></i>{[log.倉庫, log.地點, log.位置].filter(Boolean).join(' / ')}</div>)}{(log.序號 || log.相關序號) && (<div className="text-xs text-gray-500 mt-1 border-t pt-1 border-dashed break-all"><i className="fa-solid fa-barcode mr-1"></i>SN: {log.序號 || log.相關序號}</div>)}</div>))}</div>
+                            <div className="space-y-3">{filteredLogs.map((log, idx) => (
+                                <div key={idx} className="bg-white p-3 rounded-lg shadow-sm border-l-4 border-gray-300 flex flex-col gap-1">
+                                    <div className="flex justify-between items-start">
+                                        <div>
+                                            <div className="font-bold text-lg">{log.品名}</div>
+                                            <div className="text-xs text-gray-500">{new Date(log.時間).toLocaleString()}</div>
+                                        </div>
+                                        <div className="text-right">
+                                            <span className={`block font-bold text-lg ${log.類型 === 'IN' ? 'text-blue-600' : log.類型 === 'OUT' ? 'text-orange-600' : 'text-purple-600'}`}>{log.變動數量 > 0 ? '+' : ''}{log.變動數量}</span>
+                                            <span className="text-xs text-gray-400">餘 {log.結餘}</span>
+                                        </div>
+                                    </div>
+                                    <div className="text-sm text-gray-600 bg-gray-50 p-1 rounded mt-1 flex justify-between">
+                                        <span><i className="fa-solid fa-user mr-1"></i> {log.異動者 || '未填寫'}</span>
+                                        <span>{log.類型.includes('盤點') ? <span className='text-purple-600 font-bold'>盤點</span> : log.類型 === 'IN' ? '入庫' : '出庫'}</span>
+                                    </div>
+                                    {(log.倉庫 || log.地點 || log.位置) && (<div className="text-xs text-gray-500 flex items-center gap-1"><i className="fa-solid fa-map-pin"></i>{[log.倉庫, log.地點, log.位置].filter(Boolean).join(' / ')}</div>)}
+                                    {(log.序號 || log.相關序號) && (<div className="text-xs text-gray-500 mt-1 border-t pt-1 border-dashed break-all"><i className="fa-solid fa-barcode mr-1"></i>SN: {log.序號 || log.相關序號}</div>)}
+                                    
+                                    {/* 顯示備註 (IN/SET) */}
+                                    {(log.類型 !== 'OUT' && log.備註) && (
+                                        <div className="text-xs text-gray-500 mt-1 flex items-center gap-1 bg-gray-50 p-1 rounded">
+                                            <i className="fa-solid fa-circle-info text-blue-400 mr-1"></i>
+                                            <span className="font-semibold mr-1">備註:</span>
+                                            <span>{log.備註}</span>
+                                        </div>
+                                    )}
+                                    
+                                    {/* 顯示使用地點 (OUT) */}
+                                    {(log.類型 === 'OUT' && log.使用地點) && (
+                                        <div className="text-xs text-gray-500 mt-1 flex items-center gap-1 bg-gray-50 p-1 rounded">
+                                            <i className="fa-solid fa-location-dot text-orange-400 mr-1"></i>
+                                            <span className="font-semibold mr-1">使用地點:</span>
+                                            <span>{log.使用地點}</span>
+                                        </div>
+                                    )}
+                                    
+                                    {/* 顯示出庫時的原始備註 (如果有的話) */}
+                                    {(log.類型 === 'OUT' && log.備註) && (
+                                        <div className="text-xs text-gray-400 mt-1 flex items-center gap-1 pl-2 border-l-2 border-gray-200">
+                                            <i className="fa-solid fa-note-sticky mr-1"></i>
+                                            <span>{log.備註}</span>
+                                        </div>
+                                    )}
+                                </div>
+                            ))}</div>
                         </div>
                     )}
 
