@@ -17,12 +17,11 @@
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
-    <!-- SortableJS 用於拖曳排序 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
     <style>
-        body { background-color: #f0f2f5; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; overscroll-behavior-y: contain; }
+        body { background-color: #f0f2f5; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; overscroll-behavior-y: contain; -webkit-tap-highlight-color: transparent; }
         .loader { border: 3px solid #f3f3f3; border-top: 3px solid #3b82f6; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         
@@ -33,6 +32,7 @@
         .scan-feedback { animation: slide-up 0.3s ease-out; }
         @keyframes slide-up { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
         .tab-active { color: #2563eb; border-top: 2px solid #2563eb; }
+        
         .sync-indicator { font-size: 0.75rem; display: flex; align-items: center; gap: 4px; }
         .sync-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
         .sync-dot.syncing { background-color: #f59e0b; animation: pulse 1s infinite; }
@@ -40,10 +40,10 @@
         .sync-dot.error { background-color: #ef4444; }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
 
-        /* 拖曳時的樣式 */
-        .sortable-ghost { opacity: 0.4; background-color: #e5e7eb; }
-        .sortable-drag { cursor: grabbing; }
-        .drag-handle { cursor: grab; touch-action: none; } /* 確保觸控拖曳順暢 */
+        /* 拖曳排序樣式優化 */
+        .sortable-ghost { opacity: 0.4; background-color: #e5e7eb; border: 2px dashed #9ca3af; }
+        .sortable-drag { cursor: grabbing; background-color: #fff; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); transform: scale(1.02); }
+        .drag-handle { cursor: grab; touch-action: none; padding: 0.5rem; margin: -0.5rem; } 
     </style>
 </head>
 <body>
@@ -93,6 +93,7 @@
                             () => {}
                         );
                     } catch (err) {
+                        console.warn("後鏡頭啟動失敗，嘗試通用模式...", err);
                         try {
                             await html5QrCode.start({}, config, 
                                 (decodedText) => { 
@@ -104,6 +105,7 @@
                                 () => {}
                             );
                         } catch (err2) {
+                            console.error("相機完全啟動失敗", err2);
                             Swal.fire({
                                 icon: 'error',
                                 title: '無法啟動相機',
@@ -112,13 +114,16 @@
                         }
                     }
                 };
+
                 startCamera();
+
                 return () => { 
                     if (scannerRef.current && scannerRef.current.isScanning) {
                         scannerRef.current.stop().then(() => scannerRef.current.clear()).catch(e => console.error(e));
                     }
                 };
             }, []);
+
             return (
                 <div className="fixed inset-0 bg-black bg-opacity-95 z-50 flex flex-col items-center justify-center">
                     <div className="relative w-full max-w-md p-4">
@@ -146,7 +151,6 @@
             const [scanning, setScanning] = useState(false);
             const [logFilter, setLogFilter] = useState({ keyword: '', date: '', type: '' });
             
-            // 自定義排序 (存於 localStorage)
             const [customOrder, setCustomOrder] = useState(() => {
                 const saved = localStorage.getItem('inventory_sort_order');
                 return saved ? JSON.parse(saved) : [];
@@ -170,7 +174,7 @@
             });
 
             const fileInputRef = useRef(null);
-            const listRef = useRef(null); // 列表容器 Ref
+            const listRef = useRef(null);
             const [editingIndex, setEditingIndex] = useState(null);
             const [editItem, setEditItem] = useState(null);
 
@@ -179,23 +183,27 @@
             useEffect(() => { localStorage.setItem('inventory_settings', JSON.stringify(globalSettings)); }, [globalSettings]);
             useEffect(() => { localStorage.setItem('inventory_sort_order', JSON.stringify(customOrder)); }, [customOrder]);
 
-            // 初始化 SortableJS
+            // SortableJS 初始化 (修正參數以提升體驗)
             useEffect(() => {
-                if (page === 'list' && listRef.current && !search) { // 只有在清單頁且無搜尋時啟用排序
+                if (page === 'list' && listRef.current && !search) {
                     const sortable = new Sortable(listRef.current, {
-                        animation: 150,
-                        handle: '.drag-handle', // 只能透過這個 class 拖曳
+                        animation: 250, // 動畫時間增加，更平滑
+                        handle: '.drag-handle',
                         ghostClass: 'sortable-ghost',
                         dragClass: 'sortable-drag',
+                        delay: 100, // 新增：觸控延遲，避免滑動頁面時誤觸拖曳
+                        delayOnTouchOnly: true,
                         onEnd: (evt) => {
-                            // 獲取新的排序順序 (根據 data-id)
-                            const newOrder = Array.from(listRef.current.children).map(child => child.getAttribute('data-id'));
+                            // 獲取新的排序 ID 列表
+                            const newOrder = Array.from(listRef.current.children)
+                                .map(child => child.getAttribute('data-id'))
+                                .filter(id => id); // 過濾掉可能的空值
                             setCustomOrder(newOrder);
                         }
                     });
                     return () => sortable.destroy();
                 }
-            }, [page, search, inventory]); // 依賴 inventory 以確保 DOM 已渲染
+            }, [page, search, inventory]); // 當 inventory 變更時也需要重新綁定
 
             const uniqueOptions = useMemo(() => {
                 const warehouses = [...new Set(inventory.map(i => i.倉庫).filter(Boolean))];
@@ -205,7 +213,6 @@
                 return { warehouses, locations, positions, names };
             }, [inventory]);
 
-            // 聚合與排序邏輯
             const groupedInventory = useMemo(() => {
                 const grouped = {};
                 inventory.forEach(item => {
@@ -224,12 +231,10 @@
                 
                 let result = Object.values(grouped);
 
-                // 應用自定義排序
                 if (customOrder.length > 0) {
                     result.sort((a, b) => {
                         const indexA = customOrder.indexOf(a.品名);
                         const indexB = customOrder.indexOf(b.品名);
-                        // 如果都在清單中，按清單順序；如果只有一個在清單，未在清單的排後面；都未在清單則維持原樣
                         if (indexA === -1 && indexB === -1) return 0;
                         if (indexA === -1) return 1;
                         if (indexB === -1) return -1;
@@ -456,7 +461,6 @@
 
                     <input type="file" ref={fileInputRef} onChange={handleFileImport} className="hidden" accept=".xlsx,.xls,.csv" />
 
-                    {/* 編輯 Modal */}
                     {editingIndex !== null && (
                         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
                             <div className="bg-white rounded-lg w-full max-w-sm p-4 space-y-3 shadow-xl">
@@ -486,7 +490,6 @@
                     <datalist id="list-locations">{uniqueOptions.locations.map((v, i) => <option key={i} value={v} />)}</datalist>
                     <datalist id="list-positions">{uniqueOptions.positions.map((v, i) => <option key={i} value={v} />)}</datalist>
 
-                    {/* === 庫存清單 (聚合顯示 + 拖曳排序) === */}
                     {page === 'list' && (
                         <div className="p-4 space-y-4">
                             <div className="flex gap-2">
@@ -497,12 +500,10 @@
                             </div>
                             <div className="space-y-3" ref={listRef}>
                                 {filteredGroupedInventory.map((group, idx) => (
-                                    // 加入 data-id 供 SortableJS 識別
-                                    <div key={idx} data-id={group.品名} className="bg-white p-4 rounded-xl shadow-sm border relative overflow-hidden">
-                                        {/* 總數量標題 */}
+                                    // 修正：使用唯一且穩定的 key (品名)，避免拖曳時 React 渲染跳動
+                                    <div key={group.品名} data-id={group.品名} className="bg-white p-4 rounded-xl shadow-sm border relative overflow-hidden">
                                         <div className="flex justify-between items-start border-b pb-2 mb-2">
                                             <div className="flex items-center gap-2">
-                                                {/* 拖曳手柄 (僅在無搜尋時顯示) */}
                                                 {!search && <i className="fa-solid fa-grip-lines text-gray-300 cursor-grab drag-handle py-2"></i>}
                                                 <h3 className="font-bold text-gray-800 text-lg">{group.品名}</h3>
                                             </div>
@@ -511,7 +512,6 @@
                                                 {group.總數量 < group.警戒值 && <span className="text-xs bg-red-100 text-red-600 px-1 rounded font-bold">低於警戒: {group.警戒值}</span>}
                                             </div>
                                         </div>
-                                        {/* 詳細地點列表 */}
                                         <div className="space-y-2">
                                             {group.details.map((detail, dIdx) => (
                                                 <div key={dIdx} className="text-sm text-gray-600 flex flex-col bg-gray-50 p-2 rounded">
@@ -522,7 +522,6 @@
                                                         </div>
                                                         <span className="font-bold bg-white px-2 rounded border border-gray-200">x{detail.數量}</span>
                                                     </div>
-                                                    {/* 新增：顯示序號 */}
                                                     {detail.序號 && <div className="text-xs text-gray-500 mt-1 ml-4 break-all"><i className="fa-solid fa-barcode mr-1"></i>SN: {detail.序號}</div>}
                                                     {detail.備註 && <div className="text-xs text-gray-400 mt-1 ml-4"><i className="fa-solid fa-comment mr-1"></i>{detail.備註}</div>}
                                                 </div>
@@ -566,7 +565,10 @@
                                     <button onClick={() => setGlobalSettings({...globalSettings, type: 'SET'})} className={`py-2 rounded-md font-bold text-sm transition-all ${globalSettings.type === 'SET' ? 'bg-purple-600 text-white shadow' : 'text-gray-500'}`}>盤點</button>
                                 </div>
                                 <div className="flex gap-2">
-                                    <input type="datetime-local" className="flex-1 p-2 border rounded text-xs" value={globalSettings.customDate} onChange={e => setGlobalSettings({...globalSettings, customDate: e.target.value})} />
+                                    <div className="flex flex-1 gap-1">
+                                        <input type="datetime-local" className="w-full p-2 border rounded text-xs" value={globalSettings.customDate} onChange={e => setGlobalSettings({...globalSettings, customDate: e.target.value})} />
+                                        <button onClick={() => setGlobalSettings({...globalSettings, customDate: getCurrentDateTime()})} className="px-2 bg-gray-200 rounded text-gray-600"><i className="fa-solid fa-rotate-left"></i></button>
+                                    </div>
                                     <input type="text" placeholder="異動者" className="flex-1 p-2 border rounded text-xs" value={globalSettings.modifier} onChange={e => setGlobalSettings({...globalSettings, modifier: e.target.value})} />
                                 </div>
                                 
@@ -574,7 +576,14 @@
                                     <h4 className="text-xs font-bold text-blue-600 mb-2">快速加入清單</h4>
                                     <div className="flex gap-2 mb-2">
                                         <div className="relative flex-1 flex">
-                                            <textarea rows="1" placeholder="序號..." className="w-full p-2 border rounded-l text-sm font-mono focus:ring-blue-500 focus:border-blue-500 resize-none overflow-hidden" value={quickItem.barcode} onChange={e => setQuickItem({...quickItem, barcode: e.target.value, qty: countSerials(e.target.value)})} onInput={(e) => { e.target.style.height = 'auto'; e.target.style.height = (e.target.scrollHeight) + 'px'; }}></textarea>
+                                            <textarea 
+                                                rows="1" 
+                                                placeholder="序號..." 
+                                                className="w-full p-2 border rounded-l text-sm font-mono focus:ring-blue-500 focus:border-blue-500 resize-none overflow-hidden" 
+                                                value={quickItem.barcode} 
+                                                onChange={e => setQuickItem({...quickItem, barcode: e.target.value, qty: countSerials(e.target.value)})}
+                                                onInput={(e) => { e.target.style.height = 'auto'; e.target.style.height = (e.target.scrollHeight) + 'px'; }}
+                                            ></textarea>
                                             <button onClick={() => setScanning(true)} className="w-12 bg-gray-800 text-white rounded-r flex items-center justify-center hover:bg-gray-700 transition"><i className="fa-solid fa-qrcode"></i></button>
                                         </div>
                                         <input type="number" className="w-16 p-2 border rounded text-center font-bold" value={quickItem.qty} onChange={e => setQuickItem({...quickItem, qty: parseInt(e.target.value)||0})} />
@@ -662,5 +671,3 @@
     </script>
 </body>
 </html>
-
-
