@@ -27,20 +27,20 @@
             overscroll-behavior-y: contain; 
             -webkit-tap-highlight-color: transparent; 
         }
+        
+        /* 捲軸美化 */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
         .loader { border: 3px solid #f3f3f3; border-top: 3px solid #3b82f6; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         
         #reader video { position: relative; z-index: 0; object-fit: cover; border-radius: 0.5rem; }
         #reader > div { display: none !important; }
-        .scan-line {
-            position: absolute; top: 50%; left: 5%; right: 5%; height: 2px;
-            background: red; box-shadow: 0 0 4px red; z-index: 10; animation: pulse-line 1.5s infinite;
-        }
-        @keyframes pulse-line {
-            0% { opacity: 0.6; box-shadow: 0 0 2px red; }
-            50% { opacity: 1; box-shadow: 0 0 8px red; }
-            100% { opacity: 0.6; box-shadow: 0 0 2px red; }
-        }
+        .scan-line { position: absolute; top: 50%; left: 5%; right: 5%; height: 2px; background: red; box-shadow: 0 0 4px red; z-index: 10; animation: pulse-line 1.5s infinite; }
+        @keyframes pulse-line { 0% { opacity: 0.6; box-shadow: 0 0 2px red; } 50% { opacity: 1; box-shadow: 0 0 8px red; } 100% { opacity: 0.6; box-shadow: 0 0 2px red; } }
         .scan-feedback { animation: slide-up 0.3s ease-out; }
         @keyframes slide-up { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
         
@@ -51,7 +51,6 @@
         .sync-dot.error { background-color: #ef4444; }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
 
-        /* SortableJS 樣式 */
         .sortable-ghost { opacity: 0.4; background-color: #e5e7eb; border: 2px dashed #9ca3af; }
         .sortable-drag { cursor: grabbing; opacity: 1; background: white; transform: scale(1.02); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
         .drag-handle { cursor: grab; touch-action: none; padding: 0.5rem; }
@@ -61,7 +60,6 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        // Google Apps Script 網址
         const API_URL = "https://script.google.com/macros/s/AKfycbwo5zBN_DP3r5O38WpyrXmDr3rO7Gsircpi32d0kIIlHHaUcpqOhzJgi65RiytuJf83/exec"; 
 
         const { useState, useEffect, useMemo, useRef } = React;
@@ -79,60 +77,41 @@
         const Scanner = ({ onScan, onClose }) => {
             const [lastScanned, setLastScanned] = useState(null);
             const scannerRef = useRef(null);
-            
-            // 使用 useRef 儲存最新的 callback，避免 stale closure
             const onScanRef = useRef(onScan);
+
             useEffect(() => { onScanRef.current = onScan; }, [onScan]);
 
             useEffect(() => {
                 const html5QrCode = new Html5Qrcode("reader");
                 scannerRef.current = html5QrCode;
-
                 const config = { fps: 10, qrbox: { width: 250, height: 150 }, aspectRatio: 1.0 };
-
+                
                 const startCamera = async () => {
                     try {
-                        await html5QrCode.start({ facingMode: "environment" }, config, 
-                            (decodedText) => { 
-                                html5QrCode.pause();
-                                setLastScanned(decodedText);
-                                if (onScanRef.current) onScanRef.current(decodedText); // 呼叫最新的 callback
-                                setTimeout(() => html5QrCode.resume(), 1000); 
-                            }, 
-                            () => {}
-                        );
+                        await html5QrCode.start({ facingMode: "environment" }, config, (decodedText) => { 
+                            html5QrCode.pause(); 
+                            setLastScanned(decodedText);
+                            if (onScanRef.current) onScanRef.current(decodedText); 
+                            setTimeout(() => html5QrCode.resume(), 1000); 
+                        }, () => {});
                     } catch (err) {
                         try {
-                            await html5QrCode.start({}, config, 
-                                (decodedText) => { 
-                                    html5QrCode.pause();
-                                    setLastScanned(decodedText);
-                                    if (onScanRef.current) onScanRef.current(decodedText);
-                                    setTimeout(() => html5QrCode.resume(), 1000); 
-                                }, 
-                                () => {}
-                            );
+                            await html5QrCode.start({}, config, (decodedText) => { 
+                                html5QrCode.pause(); 
+                                setLastScanned(decodedText);
+                                if (onScanRef.current) onScanRef.current(decodedText); 
+                                setTimeout(() => html5QrCode.resume(), 1000); 
+                            }, () => {});
                         } catch (err2) {
-                            Swal.fire({
-                                icon: 'error',
-                                title: '無法啟動相機',
-                                text: '請確認瀏覽器已授權相機權限。'
-                            });
+                            Swal.fire({ icon: 'error', title: '無法啟動相機', text: '請確認瀏覽器權限。' });
                         }
                     }
                 };
-
                 startCamera();
-
-                return () => { 
-                    if (scannerRef.current && scannerRef.current.isScanning) {
-                        scannerRef.current.stop().then(() => scannerRef.current.clear()).catch(e => console.error(e));
-                    }
-                };
+                return () => { if (scannerRef.current && scannerRef.current.isScanning) scannerRef.current.stop().then(() => scannerRef.current.clear()).catch(()=>{}); };
             }, []);
-
             return (
-                <div className="fixed inset-0 bg-black bg-opacity-95 z-50 flex flex-col items-center justify-center">
+                <div className="fixed inset-0 bg-black bg-opacity-95 z-[100] flex flex-col items-center justify-center">
                     <div className="relative w-full max-w-md p-4">
                         <h3 className="text-white text-center mb-2 font-bold text-lg">掃描模式</h3>
                         <div className="relative rounded-lg overflow-hidden shadow-2xl border border-gray-700 bg-black">
@@ -158,28 +137,11 @@
             const [scanning, setScanning] = useState(false);
             const [logFilter, setLogFilter] = useState({ keyword: '', date: '', type: '' });
             
-            const [customOrder, setCustomOrder] = useState(() => {
-                const saved = localStorage.getItem('inventory_sort_order');
-                return saved ? JSON.parse(saved) : [];
-            });
-
-            const [batchCart, setBatchCart] = useState(() => {
-                const savedCart = localStorage.getItem('inventory_cart');
-                return savedCart ? JSON.parse(savedCart) : [];
-            });
-            
-            const [globalSettings, setGlobalSettings] = useState(() => {
-                const savedSettings = localStorage.getItem('inventory_settings');
-                return savedSettings ? JSON.parse(savedSettings) : {
-                    type: 'IN', modifier: '', customDate: getCurrentDateTime()
-                };
-            });
+            const [customOrder, setCustomOrder] = useState(() => { const saved = localStorage.getItem('inventory_sort_order'); return saved ? JSON.parse(saved) : []; });
+            const [batchCart, setBatchCart] = useState(() => { const savedCart = localStorage.getItem('inventory_cart'); return savedCart ? JSON.parse(savedCart) : []; });
+            const [globalSettings, setGlobalSettings] = useState(() => { const savedSettings = localStorage.getItem('inventory_settings'); return savedSettings ? JSON.parse(savedSettings) : { type: 'IN', modifier: '', customDate: getCurrentDateTime() }; });
             const [isTimeManual, setIsTimeManual] = useState(false);
-
-            const [quickItem, setQuickItem] = useState({
-                barcode: '', name: '', qty: 1, warehouse: '',
-                location: '', position: '', minStock: 5, note: ''
-            });
+            const [quickItem, setQuickItem] = useState({ barcode: '', name: '', qty: 1, warehouse: '', location: '', position: '', minStock: 5, note: '' });
 
             const fileInputRef = useRef(null);
             const listRef = useRef(null);
@@ -190,33 +152,17 @@
             useEffect(() => { localStorage.setItem('inventory_cart', JSON.stringify(batchCart)); }, [batchCart]);
             useEffect(() => { localStorage.setItem('inventory_settings', JSON.stringify(globalSettings)); }, [globalSettings]);
             useEffect(() => { localStorage.setItem('inventory_sort_order', JSON.stringify(customOrder)); }, [customOrder]);
-
-            // 自動更新時間
             useEffect(() => {
-                const timer = setInterval(() => {
-                    if (!isTimeManual) {
-                        setGlobalSettings(prev => ({ ...prev, customDate: getCurrentDateTime() }));
-                    }
-                }, 1000);
+                const timer = setInterval(() => { if (!isTimeManual) { setGlobalSettings(prev => ({ ...prev, customDate: getCurrentDateTime() })); } }, 1000);
                 return () => clearInterval(timer);
             }, [isTimeManual]);
 
-            // 初始化 SortableJS
+            // SortableJS
             useEffect(() => {
                 if (page === 'list' && listRef.current && !search && inventory.length > 0) {
                     const sortable = new Sortable(listRef.current, {
-                        animation: 250,
-                        handle: '.drag-handle',
-                        ghostClass: 'sortable-ghost',
-                        dragClass: 'sortable-drag',
-                        delay: 100, 
-                        delayOnTouchOnly: true,
-                        onEnd: (evt) => {
-                            const newOrder = Array.from(listRef.current.children)
-                                .map(child => child.getAttribute('data-id'))
-                                .filter(Boolean);
-                            setCustomOrder(newOrder);
-                        }
+                        animation: 250, handle: '.drag-handle', ghostClass: 'sortable-ghost', dragClass: 'sortable-drag', delay: 100, delayOnTouchOnly: true,
+                        onEnd: (evt) => { const newOrder = Array.from(listRef.current.children).map(child => child.getAttribute('data-id')).filter(Boolean); setCustomOrder(newOrder); }
                     });
                     return () => sortable.destroy();
                 }
@@ -230,6 +176,7 @@
                 return { warehouses, locations, positions, names };
             }, [inventory]);
 
+            // === 聚合邏輯 (Grouped Inventory) ===
             const groupedInventory = useMemo(() => {
                 const grouped = {};
                 inventory.forEach(item => {
@@ -263,26 +210,15 @@
 
             const loadData = async (forceUpdate = false) => {
                 const cachedInventory = localStorage.getItem('inventory_cache');
-                if (cachedInventory && !forceUpdate) {
-                    setInventory(JSON.parse(cachedInventory));
-                    setSyncStatus('syncing');
-                } else {
-                    setLoading(true);
-                }
+                if (cachedInventory && !forceUpdate) { setInventory(JSON.parse(cachedInventory)); setSyncStatus('syncing'); } else { setLoading(true); }
                 try {
                     const res = await fetch(`${API_URL}?action=getInventory`);
                     const json = await res.json();
                     if (json.status === 'success') {
-                        setInventory(json.data);
-                        localStorage.setItem('inventory_cache', JSON.stringify(json.data));
-                        setSyncStatus('synced');
-                        setTimeout(() => setSyncStatus('idle'), 3000);
+                        setInventory(json.data); localStorage.setItem('inventory_cache', JSON.stringify(json.data));
+                        setSyncStatus('synced'); setTimeout(() => setSyncStatus('idle'), 3000);
                     }
-                } catch (e) { 
-                    console.error(e);
-                    setSyncStatus('error');
-                    if (!cachedInventory) Swal.fire("連線錯誤", "無法讀取資料", "error");
-                }
+                } catch (e) { setSyncStatus('error'); }
                 setLoading(false);
             };
 
@@ -292,7 +228,7 @@
                     const res = await fetch(`${API_URL}?action=getLogs`);
                     const json = await res.json();
                     if (json.status === 'success') setLogs(json.data);
-                } catch (e) { console.error(e); }
+                } catch (e) {}
                 setLoading(false);
             };
 
@@ -301,74 +237,29 @@
             const countSerials = (str) => !str ? 1 : (str.split(/[\n,]+/).filter(s => s.trim() !== "").length || 1);
 
             const handleFileImport = (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
+                const file = e.target.files[0]; if(!file) return;
                 const reader = new FileReader();
                 reader.onload = (evt) => {
-                    try {
-                        const bstr = evt.target.result;
-                        const wb = XLSX.read(bstr, { type: 'binary' });
-                        const wsname = wb.SheetNames[0];
-                        const ws = wb.Sheets[wsname];
-                        const data = XLSX.utils.sheet_to_json(ws);
-                        if (data.length === 0) return Swal.fire("錯誤", "檔案內容為空", "error");
-                        Swal.fire({
-                            title: '確認匯入',
-                            text: `讀取到 ${data.length} 筆資料，將視為「入庫」作業，確定要批量匯入嗎？`,
-                            icon: 'question', showCancelButton: true, confirmButtonText: '匯入'
-                        }).then((result) => { if (result.isConfirmed) processBatchImport(data); });
-                    } catch (error) { Swal.fire("匯入失敗", "格式錯誤", "error"); }
+                    const wb = XLSX.read(evt.target.result, { type: 'binary' });
+                    const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+                    if(data.length) Swal.fire({ title: '確認匯入', text: `共 ${data.length} 筆`, showCancelButton: true }).then(r => r.isConfirmed && (async () => {
+                        setLoading(true);
+                        const formatted = data.map(r => ({ name: r['品名'], qty: r['數量'], warehouse: r['倉庫'], location: r['地點'], position: r['位置'], barcode: r['序號'], note: r['備註'], minStock: r['警戒值'], type: 'IN', qtyChange: r['數量'] }));
+                        const formData = new URLSearchParams(); formData.append('action', 'batchUpdate'); formData.append('modifier', '匯入作業'); formData.append('customDate', getCurrentDateTime()); formData.append('batchData', JSON.stringify(formatted));
+                        await fetch(API_URL, { method: 'POST', mode: 'no-cors', body: formData.toString() });
+                        setLoading(false); loadData(true);
+                    })());
                 };
                 reader.readAsBinaryString(file);
-                e.target.value = '';
-            };
-
-            const processBatchImport = async (rawData) => {
-                setLoading(true);
-                const BATCH_SIZE = 20;
-                let successCount = 0;
-                const formattedData = rawData.map(row => ({
-                    name: row['品名'] || '', qty: row['數量'] || 0, warehouse: row['倉庫'] || '',
-                    location: row['地點'] || '', position: row['位置'] || '', barcode: row['序號'] || '',
-                    note: row['備註'] || '', minStock: row['警戒值'] || 0, type: 'IN', qtyChange: row['數量'] || 0
-                })).filter(item => item.name);
-
-                for (let i = 0; i < formattedData.length; i += BATCH_SIZE) {
-                    const batch = formattedData.slice(i, i + BATCH_SIZE);
-                    const formData = new URLSearchParams();
-                    formData.append('action', 'batchUpdate');
-                    formData.append('modifier', '匯入作業');
-                    formData.append('customDate', getCurrentDateTime());
-                    formData.append('batchData', JSON.stringify(batch));
-                    try {
-                        await fetch(API_URL, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: formData.toString() });
-                        await new Promise(r => setTimeout(r, 1000));
-                        successCount += batch.length;
-                    } catch (e) {}
-                }
-                setLoading(false);
-                Swal.fire("匯入完成", `共 ${successCount} 筆處理成功`, "success");
-                loadData(true);
             };
 
             const handleCameraScan = (code) => {
                 setQuickItem(prev => {
                     const newBarcode = prev.barcode ? `${prev.barcode},${code}` : code;
                     let updateData = {};
-                    // 掃描時自動查找庫存，這裡使用最新的 inventory 狀態
                     if (!prev.name) {
-                        const item = inventory.find(i => {
-                            const serials = i.序號 ? String(i.序號).split(',') : [];
-                            return serials.includes(code);
-                        });
-                        if (item) {
-                            updateData = { 
-                                name: item.品名, warehouse: item.倉庫,
-                                location: item.地點, position: item.位置, minStock: item.警戒值
-                            };
-                            const Toast = Swal.mixin({ toast: true, position: 'top-end', showConfirmButton: false, timer: 1000 });
-                            Toast.fire({ icon: 'success', title: `已帶入: ${item.品名}` });
-                        }
+                        const item = inventory.find(i => { const serials = i.序號 ? String(i.序號).split(',') : []; return serials.includes(code); });
+                        if (item) updateData = { name: item.品名, warehouse: item.倉庫, location: item.地點, position: item.位置, minStock: item.警戒值 };
                     }
                     return { ...prev, barcode: newBarcode, qty: countSerials(newBarcode), ...updateData };
                 });
@@ -387,20 +278,9 @@
                 setBatchCart(prev => [{ ...quickItem, name: quickItem.name || '', qty: quickItem.qty || 1, warehouse: quickItem.warehouse || '', minStock: quickItem.minStock || 5 }, ...prev]);
                 setQuickItem({ barcode: '', name: '', qty: 1, warehouse: '', location: '', position: '', minStock: 5, note: '' });
             };
-
-            const handleRemoveItem = (index) => { setBatchCart(prev => prev.filter((_, i) => i !== index)); };
-            const handleEditItem = (index) => { setEditingIndex(index); setEditItem({ ...batchCart[index] }); };
-            
-            const handleSaveEdit = () => {
-                setBatchCart(prev => {
-                    const newCart = [...prev];
-                    newCart[editingIndex] = editItem;
-                    return newCart;
-                });
-                setEditingIndex(null);
-                setEditItem(null);
-            };
-
+            const handleRemoveItem = (i) => setBatchCart(p => p.filter((_, idx) => idx !== i));
+            const handleEditItem = (i) => { setEditingIndex(i); setEditItem({ ...batchCart[i] }); };
+            const handleSaveEdit = () => { setBatchCart(p => { const n=[...p]; n[editingIndex]=editItem; return n; }); setEditingIndex(null); };
             const onEditNameChange = (val) => {
                 const matched = inventory.filter(i => i.品名 === val);
                 let update = { name: val };
@@ -409,276 +289,337 @@
             };
 
             const handleBatchSubmit = async () => {
-                if (batchCart.length === 0) return Swal.fire('提示', '清單是空的', 'info');
-                const invalidItem = batchCart.find(i => !i.name);
-                if (invalidItem) return Swal.fire('錯誤', '清單中有未填寫品名的項目', 'warning');
-
+                if (batchCart.length === 0) return;
                 setLoading(true);
-                const payload = batchCart.map(item => ({
-                    ...item,
-                    type: globalSettings.type,
-                    qtyChange: globalSettings.type === 'IN' ? item.qty : (globalSettings.type === 'OUT' ? -item.qty : item.qty),
-                    qty: item.qty
-                }));
-
+                const payload = batchCart.map(item => ({ ...item, type: globalSettings.type, qtyChange: globalSettings.type === 'IN' ? item.qty : (globalSettings.type === 'OUT' ? -item.qty : item.qty), qty: item.qty }));
                 const formData = new URLSearchParams();
-                formData.append('action', 'batchUpdate');
-                formData.append('modifier', globalSettings.modifier);
-                formData.append('customDate', globalSettings.customDate);
-                formData.append('batchData', JSON.stringify(payload));
-
-                try {
-                    await fetch(API_URL, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: formData.toString() });
-                    await new Promise(r => setTimeout(r, 2000));
-                    Swal.fire({ icon: 'success', title: '完成', text: '批量作業已送出', timer: 1500, showConfirmButton: false });
-                    setBatchCart([]);
-                    localStorage.removeItem('inventory_cart');
-                    loadData(true);
-                } catch (e) { Swal.fire('錯誤', '連線失敗', 'error'); }
+                formData.append('action', 'batchUpdate'); formData.append('modifier', globalSettings.modifier); formData.append('customDate', globalSettings.customDate); formData.append('batchData', JSON.stringify(payload));
+                try { await fetch(API_URL, { method: 'POST', mode: 'no-cors', body: formData.toString() }); Swal.fire({ icon: 'success', title: '完成', timer: 1500, showConfirmButton: false }); setBatchCart([]); loadData(true); } catch (e) {}
                 setLoading(false);
             };
 
             const exportData = (data, title) => {
                 if (!data.length) return Swal.fire("無資料可匯出");
-                const header = Object.keys(data[0]).join(",");
-                const rows = data.map(obj => Object.values(obj).map(v => `"${v}"`).join(","));
+                // 針對告警頁面的低庫存資料，若傳入的是 Group，需要展開 details
+                let rowsToExport = data;
+                
+                // 如果是從 Alert 頁面匯出 (傳入的是 grouped 低庫存項目)，解開 details
+                // 但目前的 lowStockGroups 其實是 inventory.filter 後的結果(原始資料)，所以可以直接匯出
+                
+                const header = Object.keys(rowsToExport[0]).join(",");
+                const rows = rowsToExport.map(obj => Object.values(obj).map(v => `"${v}"`).join(","));
                 const csv = "\uFEFF" + [header, ...rows].join("\n");
                 const a = document.createElement('a'); a.href = 'data:text/csv;charset=utf-8,' + encodeURI(csv); a.download = `${title}.csv`; a.click();
             };
 
             const filteredGroupedInventory = groupedInventory.filter(g => 
                 g.品名.toLowerCase().includes(search.toLowerCase()) || 
-                g.details.some(d => d.序號 && d.序號.toString().includes(search)) ||
-                g.details.some(d => d.地點 && d.地點.toLowerCase().includes(search.toLowerCase()))
+                g.details.some(d => (d.序號 && d.序號.toString().includes(search)) || (d.地點 && d.地點.toLowerCase().includes(search.toLowerCase())))
             );
+            
+            // 修正告警邏輯：使用聚合後的群組總數量來判斷
+            const lowStockGroups = groupedInventory.filter(g => g.總數量 < g.警戒值);
+            // 匯出時需要將群組展開為原始項目
+            const lowStockItemsForExport = lowStockGroups.flatMap(g => g.details);
 
-            const lowStockItems = inventory.filter(i => parseInt(i.數量) < parseInt(i.警戒值));
             const filteredLogs = logs.filter(log => {
                 const sn = log.序號 || log.相關序號 || '';
-                const matchKeyword = !logFilter.keyword || 
-                    (log.品名 && log.品名.includes(logFilter.keyword)) || 
-                    (sn && sn.includes(logFilter.keyword));
-                
+                const matchKeyword = !logFilter.keyword || (log.品名 && log.品名.includes(logFilter.keyword)) || (sn && sn.includes(logFilter.keyword));
                 const logDateStr = new Date(log.時間).toISOString().slice(0, 10);
                 const matchDate = !logFilter.date || logDateStr === logFilter.date;
                 const matchType = !logFilter.type || log.類型 === logFilter.type;
                 return matchKeyword && matchDate && matchType;
             });
 
+            const navItems = [
+                { id: 'list', icon: 'fa-list', label: '庫存清單' },
+                { id: 'alert', icon: 'fa-triangle-exclamation', label: '庫存告警' },
+                { id: 'form', icon: 'fa-pen-to-square', label: '出入庫作業' },
+                { id: 'history', icon: 'fa-clock-rotate-left', label: '異動紀錄' }
+            ];
+
             return (
-                <div className="pb-28 max-w-md mx-auto bg-gray-50 min-h-screen shadow-xl relative">
-                    <div className="bg-blue-700 text-white p-4 sticky top-0 z-20 shadow flex justify-between items-center">
-                        <h1 className="font-bold text-lg flex items-center">
-                            <i className="fa-solid fa-warehouse mr-2"></i>庫存管理
-                            {syncStatus === 'syncing' && <span className="ml-3 sync-indicator text-blue-100"><span className="sync-dot syncing"></span> 更新中...</span>}
-                            {syncStatus === 'synced' && <span className="ml-3 sync-indicator text-green-200"><span className="sync-dot synced"></span> 已更新</span>}
-                            {syncStatus === 'error' && <span className="ml-3 sync-indicator text-red-200"><span className="sync-dot error"></span> 連線失敗</span>}
-                        </h1>
-                        {/* 修正：移除作業頁面右上角掃描按鈕 */}
-                        {loading && <div className="loader border-white border-t-transparent absolute right-4"></div>}
-                    </div>
-
-                    {scanning && <Scanner onScan={handleCameraScan} onClose={() => { setScanning(false); setPage('form'); }} />}
-                    <input type="file" ref={fileInputRef} onChange={handleFileImport} className="hidden" accept=".xlsx,.xls,.csv" />
-
-                    {editingIndex !== null && editItem && (
-                        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-                            <div className="bg-white rounded-lg w-full max-w-sm p-4 space-y-3 shadow-xl">
-                                <h3 className="font-bold text-lg border-b pb-2">編輯項目</h3>
-                                <div><label className="text-xs font-bold text-gray-500">品名 (可選單)</label><input list="list-names" className="w-full p-2 border rounded" value={editItem.name} onChange={e => onEditNameChange(e.target.value)} /></div>
-                                <div><label className="text-xs font-bold text-gray-500">序號 (逗號分隔)</label><textarea rows="2" className="w-full p-2 border rounded text-sm font-mono" value={editItem.barcode} onChange={e => setEditItem({...editItem, barcode: e.target.value, qty: countSerials(e.target.value) })}></textarea></div>
-                                <div className="flex gap-2">
-                                    <div className="flex-1"><label className="text-xs font-bold text-gray-500">數量</label><input type="number" className="w-full p-2 border rounded text-center font-bold" value={editItem.qty} onChange={e => setEditItem({...editItem, qty: parseInt(e.target.value)||0})} /></div>
-                                    <div className="flex-1"><label className="text-xs font-bold text-gray-500">警戒值</label><input type="number" className="w-full p-2 border rounded text-center" value={editItem.minStock} onChange={e => setEditItem({...editItem, minStock: parseInt(e.target.value)||0})} /></div>
-                                </div>
-                                <div className="grid grid-cols-2 gap-2 text-sm">
-                                    <div><input list="list-warehouses" placeholder="倉庫" className="w-full p-2 border rounded" value={editItem.warehouse} onChange={e => setEditItem({...editItem, warehouse: e.target.value})} /></div>
-                                    <div><input list="list-locations" placeholder="地點" className="w-full p-2 border rounded" value={editItem.location} onChange={e => setEditItem({...editItem, location: e.target.value})} /></div>
-                                    <div><input list="list-positions" placeholder="位置" className="w-full p-2 border rounded" value={editItem.position} onChange={e => setEditItem({...editItem, position: e.target.value})} /></div>
-                                    <input placeholder={globalSettings.type === 'OUT' ? "使用地點" : "備註"} className="p-2 border rounded" value={editItem.note} onChange={e => setEditItem({...editItem, note: e.target.value})} />
-                                </div>
-                                <div className="flex gap-2 pt-2">
-                                    <button onClick={() => setEditingIndex(null)} className="flex-1 py-2 bg-gray-200 rounded text-gray-700">取消</button>
-                                    <button onClick={handleSaveEdit} className="flex-1 py-2 bg-blue-600 text-white rounded shadow">確定</button>
-                                </div>
+                <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row text-gray-800">
+                    
+                    {/* 桌面側邊欄 (左側導航) */}
+                    <aside className="hidden md:flex flex-col w-64 bg-slate-900 text-white h-screen sticky top-0 shadow-2xl z-40 flex-shrink-0">
+                        <div className="p-6 border-b border-slate-800 flex items-center gap-3">
+                            <i className="fa-solid fa-boxes-stacked text-2xl text-blue-500"></i>
+                            <h1 className="text-xl font-bold tracking-tight">庫存系統</h1>
+                        </div>
+                        <nav className="flex-1 p-4 space-y-2">
+                            {navItems.map(item => (
+                                <button key={item.id} onClick={() => { setPage(item.id); if(item.id === 'history') loadLogs(); }} className={`w-full flex items-center p-3 rounded-xl transition-all ${page === item.id ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
+                                    <i className={`fa-solid ${item.icon} w-6 text-center text-lg`}></i>
+                                    <span className="ml-3 font-medium">{item.label}</span>
+                                    {item.id === 'alert' && lowStockGroups.length > 0 && <span className="ml-auto bg-red-500 text-[10px] px-2 py-0.5 rounded-full text-white">{lowStockGroups.length}</span>}
+                                </button>
+                            ))}
+                        </nav>
+                        <div className="p-6 border-t border-slate-800 text-center">
+                            <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] uppercase tracking-widest ${syncStatus === 'synced' ? 'bg-green-500/10 text-green-500' : 'bg-yellow-500/10 text-yellow-500'}`}>
+                                <span className={`w-2 h-2 rounded-full ${syncStatus === 'synced' ? 'bg-green-500' : 'bg-yellow-500 animate-pulse'}`}></span>
+                                {syncStatus === 'synced' ? 'Online' : 'Syncing'}
                             </div>
                         </div>
-                    )}
+                    </aside>
 
-                    <datalist id="list-names">{uniqueOptions.names.map((v, i) => <option key={i} value={v} />)}</datalist>
-                    <datalist id="list-warehouses">{uniqueOptions.warehouses.map((v, i) => <option key={i} value={v} />)}</datalist>
-                    <datalist id="list-locations">{uniqueOptions.locations.map((v, i) => <option key={i} value={v} />)}</datalist>
-                    <datalist id="list-positions">{uniqueOptions.positions.map((v, i) => <option key={i} value={v} />)}</datalist>
-
-                    {page === 'list' && (
-                        <div className="p-4 space-y-4">
-                            <div className="flex gap-2">
-                                <input type="text" placeholder="搜尋..." className="w-full px-4 py-2 border rounded-lg" value={search} onChange={e => setSearch(e.target.value)} />
-                                <button onClick={handleRefreshInventory} className="bg-blue-600 text-white px-4 rounded-lg shadow hover:bg-blue-700"><i className="fa-solid fa-rotate-right"></i></button>
-                                <button onClick={() => fileInputRef.current.click()} className="bg-purple-600 text-white px-4 rounded-lg shadow hover:bg-purple-700"><i className="fa-solid fa-file-import"></i></button>
-                                <button onClick={() => exportData(inventory, '庫存')} className="bg-green-600 text-white px-4 rounded-lg shadow hover:bg-green-700"><i className="fa-solid fa-file-export"></i></button>
-                            </div>
-                            <div className="space-y-3" ref={listRef}>
-                                {filteredGroupedInventory.map((group, idx) => (
-                                    <div key={group.品名} data-id={group.品名} className="bg-white p-4 rounded-xl shadow-sm border relative overflow-hidden flex flex-col">
-                                        <div className="flex justify-between items-start border-b pb-2 mb-2">
-                                            <div className="flex items-center gap-2">
-                                                {!search && <i className="fa-solid fa-grip-lines text-gray-300 cursor-grab drag-handle py-2"></i>}
-                                                <h3 className="font-bold text-gray-800 text-lg">{group.品名}</h3>
-                                            </div>
-                                            <div className="text-right ml-2">
-                                                <div className={`text-3xl font-bold ${group.總數量 < group.警戒值 ? 'text-red-600' : 'text-blue-600'}`}>{group.總數量}</div>
-                                                {group.總數量 < group.警戒值 && <span className="text-xs bg-red-100 text-red-600 px-1 rounded font-bold">低於: {group.警戒值}</span>}
-                                            </div>
-                                        </div>
-                                        <div className="space-y-2 flex-1 overflow-y-auto max-h-48">
-                                            {group.details.map((detail, dIdx) => (
-                                                <div key={dIdx} className="text-sm text-gray-600 bg-gray-50 p-2 rounded border border-gray-100">
-                                                    <div className="flex justify-between items-start">
-                                                        <div className="flex items-center gap-1">
-                                                            <i className="fa-solid fa-map-pin text-gray-400 mt-1"></i>
-                                                            <span className="font-medium break-all">{[detail.倉庫, detail.地點, detail.位置].filter(Boolean).join(' / ') || '未指定位置'}</span>
-                                                        </div>
-                                                        <span className="font-bold bg-white px-2 rounded border border-gray-200 text-gray-700 flex-shrink-0">x{detail.數量}</span>
-                                                    </div>
-                                                    {detail.序號 && <div className="text-xs text-gray-500 mt-1 ml-5 break-all font-mono"><i className="fa-solid fa-barcode mr-1"></i>{detail.序號}</div>}
-                                                    {detail.備註 && <div className="text-xs text-gray-400 mt-1 ml-5 break-all"><i className="fa-solid fa-comment mr-1"></i>{detail.備註}</div>}
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
+                    {/* 主內容區 */}
+                    <main className="flex-1 flex flex-col min-w-0 bg-slate-50">
+                        
+                        {/* 手機版 Header (含掃描按鈕) */}
+                        <div className="md:hidden bg-blue-700 text-white p-4 sticky top-0 z-20 shadow flex justify-between items-center">
+                            <h1 className="font-bold text-lg flex items-center"><i className="fa-solid fa-warehouse mr-2"></i>庫存管理 {syncStatus !== 'idle' && (<span className="ml-3 sync-indicator text-blue-100"><span className={`sync-dot ${syncStatus}`}></span> {syncStatus === 'syncing' ? '更新...' : syncStatus === 'synced' ? 'OK' : 'Err'}</span>)}</h1>
+                            {loading && <div className="loader border-white border-t-transparent absolute right-4"></div>}
                         </div>
-                    )}
 
-                    {page === 'alert' && (
-                        <div className="p-4 space-y-4">
-                            <div className="flex justify-between items-center p-3 bg-red-50 rounded-lg border border-red-200">
-                                <h2 className="font-bold text-red-700 flex items-center"><i className="fa-solid fa-triangle-exclamation mr-2"></i> 低庫存 ({lowStockItems.length})</h2>
-                                <div className="flex gap-2">
-                                    <button onClick={handleRefreshInventory} className="bg-red-600 text-white px-3 py-1.5 rounded-lg shadow hover:bg-red-700"><i className="fa-solid fa-rotate-right"></i></button>
-                                    <button onClick={() => exportData(lowStockItems, '低庫存報表')} className="bg-red-600 text-white px-3 py-1.5 rounded-lg shadow hover:bg-red-700"><i className="fa-solid fa-file-export"></i></button>
-                                </div>
-                            </div>
-                            <div className="space-y-3">
-                                {lowStockItems.map((item, idx) => (
-                                    <div key={idx} className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-red-500">
-                                        <div className="flex justify-between items-center">
-                                            <div><h3 className="font-bold text-gray-800">{item.品名}</h3><p className="text-xs text-gray-500">{item.倉庫} {item.地點}</p></div>
-                                            <div className="text-right"><span className="text-2xl font-bold text-red-600">{item.數量}</span><div className="text-xs text-gray-400">低於 {item.警戒值}</div></div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
+                        {/* 桌面版 Topbar */}
+                        <div className="hidden md:flex bg-white p-4 shadow-sm justify-between items-center border-b">
+                            <div className="font-bold text-gray-700 text-lg">{page === 'list' ? '庫存總覽' : page === 'alert' ? '庫存告警' : page === 'form' ? '批量作業' : '歷史紀錄'}</div>
+                            <div className="flex items-center gap-4">{loading && <div className="loader border-blue-600 border-t-transparent"></div>}<div className="text-sm text-gray-500">{getCurrentDateTime().replace('T', ' ')}</div></div>
                         </div>
-                    )}
 
-                    {page === 'form' && (
-                        <div className="flex flex-col h-full">
-                            <div className="bg-white p-4 shadow-sm z-10 space-y-3">
-                                <div className="grid grid-cols-3 gap-2 p-1 bg-gray-100 rounded-lg">
-                                    <button onClick={() => setGlobalSettings({...globalSettings, type: 'IN'})} className={`py-2 rounded-md font-bold text-sm transition-all ${globalSettings.type === 'IN' ? 'bg-blue-600 text-white shadow' : 'text-gray-500'}`}>入庫</button>
-                                    <button onClick={() => setGlobalSettings({...globalSettings, type: 'OUT'})} className={`py-2 rounded-md font-bold text-sm transition-all ${globalSettings.type === 'OUT' ? 'bg-orange-600 text-white shadow' : 'text-gray-500'}`}>出庫</button>
-                                    <button onClick={() => setGlobalSettings({...globalSettings, type: 'SET'})} className={`py-2 rounded-md font-bold text-sm transition-all ${globalSettings.type === 'SET' ? 'bg-purple-600 text-white shadow' : 'text-gray-500'}`}>盤點</button>
-                                </div>
-                                <div className="flex flex-col gap-2">
-                                    <div className="flex gap-1 w-full">
-                                        <input type="datetime-local" className="flex-1 p-2 border rounded-lg bg-gray-50 text-sm min-w-0" value={globalSettings.customDate} onChange={e => { setIsTimeManual(true); setGlobalSettings({...globalSettings, customDate: e.target.value}); }} />
-                                        <button onClick={() => { setIsTimeManual(false); setGlobalSettings({...globalSettings, customDate: getCurrentDateTime()}); }} className="px-3 bg-gray-200 rounded-lg text-gray-600 hover:bg-gray-300"><i className="fa-solid fa-rotate-left"></i></button>
-                                    </div>
-                                    <input type="text" placeholder="異動者 (操作人員)" className="w-full p-2 border rounded-lg bg-gray-50 text-sm" value={globalSettings.modifier} onChange={e => setGlobalSettings({...globalSettings, modifier: e.target.value})} />
-                                </div>
-                                
-                                <div className="border rounded-lg p-3 bg-blue-50 border-blue-100">
-                                    <h4 className="text-xs font-bold text-blue-600 mb-2">快速加入清單</h4>
-                                    <div className="flex gap-2 mb-2">
-                                        <div className="relative flex-1 flex">
-                                            <textarea rows="1" placeholder="序號..." className="w-full p-2 border rounded-l-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 outline-none resize-none overflow-hidden h-11 leading-5" value={quickItem.barcode} onChange={e => setQuickItem({...quickItem, barcode: e.target.value, qty: countSerials(e.target.value)})} onInput={(e) => { e.target.style.height = 'auto'; e.target.style.height = (e.target.scrollHeight) + 'px'; }}></textarea>
-                                            <button onClick={() => setScanning(true)} className="w-12 bg-gray-800 text-white rounded-r-lg hover:bg-slate-700 transition flex items-center justify-center"><i className="fa-solid fa-qrcode"></i></button>
-                                        </div>
-                                        <input type="number" className="w-16 p-2 border rounded-lg text-center font-bold text-lg" value={quickItem.qty} onChange={e => setQuickItem({...quickItem, qty: parseInt(e.target.value)||0})} />
-                                    </div>
-                                    <div className="flex gap-2 mb-2">
-                                        <input list="list-names" placeholder="品名..." className="flex-1 p-2 border rounded-lg text-sm" value={quickItem.name} onChange={e => handleQuickInputNameChange(e.target.value)} />
-                                        {globalSettings.type === 'IN' && <input type="number" placeholder="警戒" className="w-16 p-2 border rounded-lg text-sm text-center" value={quickItem.minStock} onChange={e => setQuickItem({...quickItem, minStock: parseInt(e.target.value)||0})} />}
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-2 text-xs mb-2">
-                                        <input list="list-warehouses" placeholder="倉庫" className="p-2 border rounded" value={quickItem.warehouse} onChange={e => setQuickItem({...quickItem, warehouse: e.target.value})} />
-                                        <input list="list-locations" placeholder="地點" className="p-2 border rounded" value={quickItem.location} onChange={e => setQuickItem({...quickItem, location: e.target.value})} />
-                                        <input list="list-positions" placeholder="位置" className="p-2 border rounded" value={quickItem.position} onChange={e => setQuickItem({...quickItem, position: e.target.value})} />
-                                        <input placeholder={globalSettings.type === 'OUT' ? "使用地點" : "備註"} className="p-2 border rounded" value={quickItem.note} onChange={e => setQuickItem({...quickItem, note: e.target.value})} />
-                                    </div>
-                                    <button onClick={handleAddQuickItemToCart} className="w-full py-2 bg-blue-600 text-white rounded font-bold shadow text-sm hover:bg-blue-700 transition"><i className="fa-solid fa-plus mr-1"></i> 加入暫存</button>
-                                </div>
-                            </div>
+                        <div className="flex-1 overflow-y-auto p-4 md:p-8 pb-28 md:pb-8">
 
-                            <div className="flex-1 overflow-y-auto p-4 space-y-3 pb-32">
-                                {batchCart.map((item, idx) => (
-                                    <div key={idx} className="bg-white p-3 rounded-lg shadow-sm border border-gray-100 flex items-center justify-between animate-fade-in">
-                                        <div className="flex-1 mr-3" onClick={() => handleEditItem(idx)}>
-                                            <div className="font-bold text-gray-800">{item.name || <span className="text-red-400 italic">未輸入名稱</span>}</div>
-                                            <div className="text-xs text-gray-500 truncate max-w-[200px] md:max-w-md">{item.barcode}</div>
-                                            <div className="text-xs text-gray-400">{item.warehouse} {item.location} {item.position}</div>
-                                            {item.note && <div className="text-xs text-gray-500 mt-1"><i className={`fa-solid ${globalSettings.type === 'OUT' ? 'fa-location-dot' : 'fa-comment'} mr-1`}></i>{item.note}</div>}
-                                        </div>
-                                        <div className="flex items-center gap-3">
-                                            <div className={`text-xl font-bold ${globalSettings.type === 'IN' ? 'text-blue-600' : globalSettings.type === 'OUT' ? 'text-orange-600' : 'text-purple-600'}`}>{globalSettings.type === 'SET' ? '盤:' : 'x'}{item.qty}</div>
-                                            <button onClick={() => handleRemoveItem(idx)} className="text-gray-400 hover:text-red-500 px-2"><i className="fa-solid fa-trash"></i></button>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
+                            {scanning && <Scanner onScan={handleCameraScan} onClose={() => { setScanning(false); setPage('form'); }} />}
+                            <input type="file" ref={fileInputRef} onChange={handleFileImport} className="hidden" accept=".xlsx,.xls,.csv" />
 
-                            {batchCart.length > 0 && (
-                                <div className="fixed bottom-24 left-0 w-full px-4 z-20">
-                                    <button onClick={handleBatchSubmit} className={`w-full py-3 rounded-xl text-white font-bold shadow-lg text-lg flex items-center justify-center gap-2 ${globalSettings.type === 'IN' ? 'bg-blue-600 hover:bg-blue-700' : globalSettings.type === 'OUT' ? 'bg-orange-600 hover:bg-orange-700' : 'bg-purple-600 hover:bg-purple-700'}`}><i className="fa-solid fa-paper-plane"></i> 確認送出 ({batchCart.length} 筆)</button>
+                            {editingIndex !== null && editItem && (
+                                <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+                                    <div className="bg-white rounded-lg w-full max-w-sm p-4 space-y-3 shadow-xl">
+                                        <h3 className="font-bold text-lg border-b pb-2">編輯項目</h3>
+                                        <div><label className="text-xs font-bold text-gray-500">品名</label><input list="list-names" className="w-full p-2 border rounded" value={editItem.name} onChange={e => onEditNameChange(e.target.value)} /></div>
+                                        <div><label className="text-xs font-bold text-gray-500">序號</label><textarea rows="2" className="w-full p-2 border rounded text-sm font-mono" value={editItem.barcode} onChange={e => setEditItem({...editItem, barcode: e.target.value, qty: countSerials(e.target.value) })}></textarea></div>
+                                        <div className="flex gap-2">
+                                            <div className="flex-1"><label className="text-xs font-bold text-gray-500">數量</label><input type="number" className="w-full p-2 border rounded text-center font-bold" value={editItem.qty} onChange={e => setEditItem({...editItem, qty: parseInt(e.target.value)||0})} /></div>
+                                            <div className="flex-1"><label className="text-xs font-bold text-gray-500">警戒值</label><input type="number" className="w-full p-2 border rounded text-center" value={editItem.minStock} onChange={e => setEditItem({...editItem, minStock: parseInt(e.target.value)||0})} /></div>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-2 text-sm">
+                                            <div><input list="list-warehouses" placeholder="倉庫" className="w-full p-2 border rounded" value={editItem.warehouse} onChange={e => setEditItem({...editItem, warehouse: e.target.value})} /></div>
+                                            <div><input list="list-locations" placeholder="地點" className="w-full p-2 border rounded" value={editItem.location} onChange={e => setEditItem({...editItem, location: e.target.value})} /></div>
+                                            <div><input list="list-positions" placeholder="位置" className="w-full p-2 border rounded" value={editItem.position} onChange={e => setEditItem({...editItem, position: e.target.value})} /></div>
+                                            <input placeholder={globalSettings.type === 'OUT' ? "使用地點" : "備註"} className="p-2 border rounded" value={editItem.note} onChange={e => setEditItem({...editItem, note: e.target.value})} />
+                                        </div>
+                                        <div className="flex gap-2 pt-2"><button onClick={() => setEditingIndex(null)} className="flex-1 py-2 bg-gray-200 rounded text-gray-700">取消</button><button onClick={handleSaveEdit} className="flex-1 py-2 bg-blue-600 text-white rounded shadow">確定</button></div>
+                                    </div>
                                 </div>
                             )}
-                        </div>
-                    )}
 
-                    {page === 'history' && (
-                        <div className="p-4 space-y-4">
-                            <div className="flex justify-between items-center"><h2 className="font-bold">近期異動</h2><div className="flex gap-2"><button onClick={handleRefreshLogs} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg shadow hover:bg-blue-700"><i className="fa-solid fa-rotate-right"></i></button><button onClick={() => exportData(logs, '紀錄')} className="bg-green-600 text-white px-3 py-1.5 rounded-lg shadow hover:bg-green-700"><i className="fa-solid fa-file-export"></i></button></div></div>
-                            <div className="bg-white p-3 rounded-lg shadow-sm space-y-2">
-                                {/* 修正：紀錄頁面時間格寬度縮小 */}
-                                <div className="flex flex-col gap-2">
-                                    <div className="flex gap-2">
-                                        <input type="text" placeholder="品名或序號..." className="flex-1 p-2 border rounded-lg text-sm min-w-0" value={logFilter.keyword} onChange={e => setLogFilter({...logFilter, keyword: e.target.value})} />
-                                        <select className="p-2 border rounded-lg text-sm flex-shrink-0 w-24 md:w-32 bg-white" value={logFilter.type} onChange={e => setLogFilter({...logFilter, type: e.target.value})}><option value="">全部</option><option value="IN">入庫</option><option value="OUT">出庫</option></select>
-                                    </div>
-                                    <input type="date" className="w-40 p-2 border rounded-lg text-sm bg-gray-50" value={logFilter.date} onChange={e => setLogFilter({...logFilter, date: e.target.value})} />
-                                </div>
-                            </div>
-                            <div className="space-y-3">{filteredLogs.map((log, idx) => (
-                                <div key={idx} className="bg-white p-3 rounded-lg shadow-sm border-l-4 border-gray-300 flex flex-col gap-1">
-                                    <div className="flex justify-between items-start">
-                                        <div className="flex-1 min-w-0 mr-2">
-                                            <div className="font-bold text-lg text-gray-800 break-words">{log.品名}</div>
-                                            <div className="text-xs text-gray-500 mt-1">{new Date(log.時間).toLocaleString()}</div>
-                                        </div>
-                                        <div className="text-right flex-shrink-0">
-                                            <span className={`block font-bold text-lg ${log.類型 === 'IN' ? 'text-blue-600' : log.類型 === 'OUT' ? 'text-orange-600' : 'text-purple-600'}`}>{log.變動數量 > 0 ? '+' : ''}{log.變動數量}</span>
-                                            <span className="text-xs text-gray-400">餘 {log.結餘}</span>
-                                        </div>
-                                    </div>
-                                    <div className="text-sm text-gray-600 bg-gray-50 p-1 rounded mt-1 flex justify-between"><span><i className="fa-solid fa-user mr-1"></i> {log.異動者 || '未填寫'}</span><span>{log.類型.includes('盤點') ? <span className='text-purple-600 font-bold'>盤點</span> : log.類型 === 'IN' ? '入庫' : '出庫'}</span></div>
-                                    {(log.倉庫 || log.地點 || log.位置) && (<div className="text-xs text-gray-500 flex items-center gap-1"><i className="fa-solid fa-map-pin"></i>{[log.倉庫, log.地點, log.位置].filter(Boolean).join(' / ')}</div>)}
-                                    {(log.序號 || log.相關序號) && (<div className="text-xs text-gray-500 mt-1 border-t pt-1 border-dashed break-all"><i className="fa-solid fa-barcode mr-1"></i>SN: {log.序號 || log.相關序號}</div>)}
-                                    {(log.類型 !== 'OUT' && log.備註) && (<div className="text-xs text-gray-500 mt-1 flex items-center gap-1 bg-gray-50 p-1 rounded break-all"><i className="fa-solid fa-circle-info text-blue-400 mr-1 flex-shrink-0"></i><span className="font-semibold mr-1 flex-shrink-0">備註:</span><span>{log.備註}</span></div>)}
-                                    {(log.類型 === 'OUT' && log.使用地點) && (<div className="text-xs text-gray-500 mt-1 flex items-center gap-1 bg-gray-50 p-1 rounded break-all"><i className="fa-solid fa-location-dot text-orange-400 mr-1 flex-shrink-0"></i><span className="font-semibold mr-1 flex-shrink-0">使用地點:</span><span>{log.使用地點}</span></div>)}
-                                </div>
-                            ))}</div>
-                        </div>
-                    )}
+                            <datalist id="list-names">{uniqueOptions.names.map((v, i) => <option key={i} value={v} />)}</datalist>
+                            <datalist id="list-warehouses">{uniqueOptions.warehouses.map((v, i) => <option key={i} value={v} />)}</datalist>
+                            <datalist id="list-locations">{uniqueOptions.locations.map((v, i) => <option key={i} value={v} />)}</datalist>
+                            <datalist id="list-positions">{uniqueOptions.positions.map((v, i) => <option key={i} value={v} />)}</datalist>
 
-                    <div className="fixed bottom-0 w-full bg-white border-t flex justify-around py-2 text-xs text-gray-500 max-w-md shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-30 pb-4">
-                        <button onClick={() => setPage('list')} className={`flex flex-col items-center w-full ${page === 'list' ? 'text-blue-600' : 'text-gray-400'}`}><div className={`w-10 h-10 rounded-full flex items-center justify-center -mt-6 border-4 border-white shadow-lg nav-icon transition-transform ${page === 'list' ? 'bg-blue-600 text-white scale-110' : 'bg-gray-500 text-white'}`}><i className="fa-solid fa-list text-lg"></i></div><span className="mt-1 font-bold">清單</span></button>
-                        <button onClick={() => setPage('alert')} className={`flex flex-col items-center w-full ${page === 'alert' ? 'text-blue-600' : 'text-gray-400'}`}><div className={`w-10 h-10 rounded-full flex items-center justify-center -mt-6 border-4 border-white shadow-lg nav-icon transition-transform ${page === 'alert' ? 'bg-blue-600 text-white scale-110' : 'bg-gray-500 text-white'}`}><i className="fa-solid fa-triangle-exclamation text-lg"></i></div><span className="mt-1 font-bold">告警</span></button>
-                        <button onClick={() => setPage('form')} className={`flex flex-col items-center w-full ${page === 'form' ? 'text-blue-600' : 'text-gray-400'}`}><div className={`w-10 h-10 rounded-full flex items-center justify-center -mt-6 border-4 border-white shadow-lg nav-icon transition-transform ${page === 'form' ? 'bg-blue-600 text-white scale-110' : 'bg-gray-500 text-white'}`}><i className="fa-solid fa-pen-to-square text-lg"></i></div><span className="mt-1 font-bold">作業</span></button>
-                        <button onClick={() => { setPage('history'); loadLogs(); }} className={`flex flex-col items-center w-full ${page === 'history' ? 'text-blue-600' : 'text-gray-400'}`}><div className={`w-10 h-10 rounded-full flex items-center justify-center -mt-6 border-4 border-white shadow-lg nav-icon transition-transform ${page === 'history' ? 'bg-blue-600 text-white scale-110' : 'bg-gray-500 text-white'}`}><i className="fa-solid fa-clock-rotate-left text-lg"></i></div><span className="mt-1 font-bold">紀錄</span></button>
-                    </div>
+                            {page === 'list' && (
+                                <div className="space-y-4">
+                                    <div className="flex gap-2 max-w-4xl">
+                                        <input type="text" placeholder="搜尋..." className="w-full px-4 py-2 border rounded-lg shadow-sm" value={search} onChange={e => setSearch(e.target.value)} />
+                                        <button onClick={() => loadData(true)} className="bg-white border text-gray-700 px-4 rounded-lg shadow-sm hover:bg-gray-50" title="重整"><i className="fa-solid fa-rotate-right"></i></button>
+                                        <button onClick={() => fileInputRef.current.click()} className="bg-purple-600 text-white px-4 rounded-lg shadow hover:bg-purple-700" title="匯入"><i className="fa-solid fa-file-import"></i></button>
+                                        <button onClick={() => exportData(inventory, '庫存')} className="bg-green-600 text-white px-4 rounded-lg shadow hover:bg-green-700" title="匯出"><i className="fa-solid fa-file-export"></i></button>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4" ref={listRef}>
+                                        {filteredGroupedInventory.map((group, idx) => (
+                                            <div key={group.品名} data-id={group.品名} className="bg-white p-4 rounded-xl shadow-sm border relative overflow-hidden flex flex-col">
+                                                <div className="flex justify-between items-start border-b pb-2 mb-2">
+                                                    <div className="flex items-center gap-2">
+                                                        {!search && <i className="fa-solid fa-grip-lines text-gray-300 cursor-grab drag-handle py-2"></i>}
+                                                        <h3 className="font-bold text-gray-800 text-lg line-clamp-2">{group.品名}</h3>
+                                                    </div>
+                                                    <div className="text-right flex-shrink-0 ml-2">
+                                                        <div className={`text-3xl font-bold ${group.總數量 < group.警戒值 ? 'text-red-600' : 'text-blue-600'}`}>{group.總數量}</div>
+                                                        {group.總數量 < group.警戒值 && <span className="text-xs bg-red-100 text-red-600 px-1 rounded font-bold">低於: {group.警戒值}</span>}
+                                                    </div>
+                                                </div>
+                                                <div className="space-y-2 flex-1 overflow-y-auto max-h-48 custom-scrollbar">
+                                                    {group.details.map((detail, dIdx) => (
+                                                        <div key={dIdx} className="text-sm text-gray-600 bg-gray-50 p-2 rounded border border-gray-100">
+                                                            <div className="flex justify-between items-start">
+                                                                <div className="flex items-start gap-2">
+                                                                    <i className="fa-solid fa-map-pin text-gray-400 mt-1"></i>
+                                                                    <span className="font-medium break-all">{[detail.倉庫, detail.地點, detail.位置].filter(Boolean).join(' / ') || '未指定位置'}</span>
+                                                                </div>
+                                                                <span className="font-bold bg-white px-2 rounded border border-gray-200 text-gray-700 flex-shrink-0">x{detail.數量}</span>
+                                                            </div>
+                                                            {detail.序號 && <div className="text-xs text-gray-500 mt-1 ml-5 break-all font-mono"><i className="fa-solid fa-barcode mr-1"></i>{detail.序號}</div>}
+                                                            {detail.備註 && <div className="text-xs text-gray-400 mt-1 ml-5 break-all"><i className="fa-solid fa-comment mr-1"></i>{detail.備註}</div>}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    {filteredGroupedInventory.length === 0 && <div className="text-center text-gray-400 mt-20">無匹配庫存項目</div>}
+                                </div>
+                            )}
+
+                            {/* === 告警頁面 (聚合版) === */}
+                            {page === 'alert' && (
+                                <div className="space-y-4 max-w-5xl mx-auto">
+                                    <div className="flex justify-between items-center p-4 bg-red-50 rounded-xl border border-red-100 shadow-sm">
+                                        <h2 className="font-bold text-red-700 text-lg flex items-center"><i className="fa-solid fa-triangle-exclamation mr-3 text-2xl"></i> 低庫存警示 ({lowStockGroups.length} 項)</h2>
+                                        <div className="flex gap-2">
+                                            <button onClick={() => loadData(true)} className="bg-white text-red-600 border border-red-200 px-4 py-2 rounded-lg hover:bg-red-50 shadow-sm" title="重整"><i className="fa-solid fa-rotate-right"></i></button>
+                                            <button onClick={() => exportData(lowStockItemsForExport, '低庫存報表')} className="bg-red-600 text-white px-4 py-2 rounded-lg shadow hover:bg-red-700 font-bold" title="匯出"><i className="fa-solid fa-file-export mr-2"></i></button>
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                        {/* 使用 lowStockGroups 來顯示聚合卡片 */}
+                                        {lowStockGroups.map((group, idx) => (
+                                            <div key={idx} className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-red-500 flex flex-col">
+                                                <div className="flex justify-between items-center mb-2 pb-2 border-b border-gray-100">
+                                                    <h3 className="font-bold text-gray-800 text-lg">{group.品名}</h3>
+                                                    <div className="text-right">
+                                                        <span className="text-3xl font-black text-red-600">{group.總數量}</span>
+                                                        <div className="text-xs text-gray-400 font-bold">警戒: {group.警戒值}</div>
+                                                    </div>
+                                                </div>
+                                                <div className="space-y-1 flex-1 overflow-y-auto max-h-40">
+                                                    {group.details.map((detail, dIdx) => (
+                                                        <div key={dIdx} className="text-sm text-gray-600 flex justify-between bg-red-50 p-2 rounded">
+                                                            <span className="font-medium">{[detail.倉庫, detail.地點].filter(Boolean).join(' / ')}</span>
+                                                            <span className="font-bold">x{detail.數量}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {page === 'form' && (
+                                <div className="flex flex-col h-full max-w-3xl mx-auto">
+                                    <div className="bg-white p-6 md:p-8 rounded-xl shadow-sm border border-gray-100 space-y-6 mb-6">
+                                        <div className="flex flex-col md:flex-row gap-6">
+                                            <div className="hidden md:flex flex-col w-32 space-y-2">
+                                                <div className="text-xs font-bold text-gray-400 text-center uppercase tracking-wider mb-1">Mode</div>
+                                                {['IN', 'OUT', 'SET'].map(t => (
+                                                    <button key={t} onClick={() => setGlobalSettings({...globalSettings, type: t})} className={`w-full py-3 rounded-lg font-bold text-sm transition-all flex items-center justify-center gap-2 ${globalSettings.type === t ? (t==='IN'?'bg-blue-600 text-white':t==='OUT'?'bg-orange-600 text-white':'bg-purple-600 text-white') + ' shadow-lg scale-105' : 'text-gray-400 hover:bg-gray-100'}`}>
+                                                        <i className={`fa-solid ${t==='IN'?'fa-arrow-right-to-bracket':t==='OUT'?'fa-arrow-right-from-bracket':'fa-list-check'}`}></i>
+                                                        {t==='IN'?'入庫':t==='OUT'?'出庫':'盤點'}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                            
+                                            <div className="md:hidden grid grid-cols-3 gap-2 p-1 bg-gray-100 rounded-lg">
+                                                <button onClick={() => setGlobalSettings({...globalSettings, type: 'IN'})} className={`py-2 rounded-md font-bold text-sm ${globalSettings.type === 'IN' ? 'bg-blue-600 text-white shadow' : 'text-gray-500'}`}>入庫</button>
+                                                <button onClick={() => setGlobalSettings({...globalSettings, type: 'OUT'})} className={`py-2 rounded-md font-bold text-sm ${globalSettings.type === 'OUT' ? 'bg-orange-600 text-white shadow' : 'text-gray-500'}`}>出庫</button>
+                                                <button onClick={() => setGlobalSettings({...globalSettings, type: 'SET'})} className={`py-2 rounded-md font-bold text-sm ${globalSettings.type === 'SET' ? 'bg-purple-600 text-white shadow' : 'text-gray-500'}`}>盤點</button>
+                                            </div>
+
+                                            <div className="flex-1 flex flex-col gap-4">
+                                                <div className="flex flex-col gap-2">
+                                                    <div className="flex gap-1 w-full">
+                                                        <input type="datetime-local" className="flex-1 p-2 border rounded-lg bg-gray-50 text-sm min-w-0" value={globalSettings.customDate} onChange={e => { setIsTimeManual(true); setGlobalSettings({...globalSettings, customDate: e.target.value}); }} />
+                                                        <button onClick={() => { setIsTimeManual(false); setGlobalSettings({...globalSettings, customDate: getCurrentDateTime()}); }} className="px-3 bg-gray-200 rounded-lg text-gray-600 hover:bg-gray-300"><i className="fa-solid fa-rotate-left"></i></button>
+                                                    </div>
+                                                    <input type="text" placeholder="異動者 (操作人員)" className="w-full p-2 border rounded-lg bg-gray-50 text-sm" value={globalSettings.modifier} onChange={e => setGlobalSettings({...globalSettings, modifier: e.target.value})} />
+                                                </div>
+                                                
+                                                <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
+                                                    <div className="flex gap-2 mb-3">
+                                                        <div className="relative flex-1 flex">
+                                                            <textarea rows="1" placeholder="掃描或輸入序號..." className="w-full p-3 border rounded-l-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 outline-none resize-none overflow-hidden h-11 leading-5" value={quickItem.barcode} onChange={e => setQuickItem({...quickItem, barcode: e.target.value, qty: countSerials(e.target.value)})} onInput={(e) => { e.target.style.height = 'auto'; e.target.style.height = (e.target.scrollHeight) + 'px'; }}></textarea>
+                                                            <button onClick={() => setScanning(true)} className="w-12 bg-slate-800 text-white rounded-r-lg hover:bg-slate-700 transition flex items-center justify-center"><i className="fa-solid fa-qrcode"></i></button>
+                                                        </div>
+                                                        <input type="number" className="w-16 p-2 border rounded-lg text-center font-bold text-lg" value={quickItem.qty} onChange={e => setQuickItem({...quickItem, qty: parseInt(e.target.value)||0})} />
+                                                    </div>
+                                                    <div className="flex gap-2 mb-3">
+                                                        <input list="list-names" placeholder="品名 (輸入或選單)" className="flex-1 p-2 border rounded-lg text-sm" value={quickItem.name} onChange={e => handleQuickInputNameChange(e.target.value)} />
+                                                        {globalSettings.type === 'IN' && <input type="number" placeholder="警戒" className="w-16 p-2 border rounded-lg text-sm text-center" value={quickItem.minStock} onChange={e => setQuickItem({...quickItem, minStock: parseInt(e.target.value)||0})} />}
+                                                    </div>
+                                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+                                                        <input list="list-warehouses" placeholder="倉庫" className="p-2 border rounded text-sm" value={quickItem.warehouse} onChange={e => setQuickItem({...quickItem, warehouse: e.target.value})} />
+                                                        <input list="list-locations" placeholder="地點" className="p-2 border rounded text-sm" value={quickItem.location} onChange={e => setQuickItem({...quickItem, location: e.target.value})} />
+                                                        <input list="list-positions" placeholder="位置" className="p-2 border rounded text-sm" value={quickItem.position} onChange={e => setQuickItem({...quickItem, position: e.target.value})} />
+                                                        <input placeholder={globalSettings.type === 'OUT' ? "使用地點" : "備註"} className="p-2 border rounded text-sm" value={quickItem.note} onChange={e => setQuickItem({...quickItem, note: e.target.value})} />
+                                                    </div>
+                                                    <button onClick={handleAddQuickItemToCart} className="w-full py-2 bg-blue-600 text-white rounded font-bold shadow hover:bg-blue-700 transition"><i className="fa-solid fa-plus mr-1"></i> 加入暫存</button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex-1 overflow-y-auto pb-24 md:pb-4 space-y-2">
+                                        {batchCart.map((item, idx) => (
+                                            <div key={idx} className="bg-white p-3 rounded-lg shadow-sm border border-gray-100 flex items-center justify-between group hover:border-blue-300 transition-colors cursor-pointer" onClick={() => handleEditItem(idx)}>
+                                                <div className="flex-1 mr-3">
+                                                    <div className="font-bold text-gray-800">{item.name || <span className="text-red-400 italic">未輸入名稱</span>}</div>
+                                                    <div className="text-xs text-gray-500 truncate max-w-[200px] md:max-w-md font-mono">{item.barcode}</div>
+                                                    <div className="text-xs text-gray-400 mt-0.5">{[item.warehouse, item.location, item.position].filter(Boolean).join(' / ')}</div>
+                                                    {item.note && <div className="text-xs text-gray-500 mt-1"><i className={`fa-solid ${globalSettings.type === 'OUT' ? 'fa-location-dot' : 'fa-comment'} mr-1`}></i>{item.note}</div>}
+                                                </div>
+                                                <div className="flex items-center gap-3">
+                                                    <div className={`text-xl font-bold ${globalSettings.type === 'IN' ? 'text-blue-600' : globalSettings.type === 'OUT' ? 'text-orange-600' : 'text-purple-600'}`}>{globalSettings.type === 'SET' ? '盤:' : 'x'}{item.qty}</div>
+                                                    <button onClick={(e) => { e.stopPropagation(); handleRemoveItem(idx); }} className="w-8 h-8 rounded-full bg-gray-100 text-gray-400 hover:bg-red-100 hover:text-red-500 flex items-center justify-center transition"><i className="fa-solid fa-trash"></i></button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                        {batchCart.length === 0 && <div className="text-center text-gray-300 py-10"><i className="fa-solid fa-basket-shopping text-6xl mb-4 block"></i>清單是空的</div>}
+                                    </div>
+
+                                    {batchCart.length > 0 && (
+                                        <div className="fixed bottom-24 left-0 md:left-64 right-0 p-4 md:p-8 flex justify-center z-40 pointer-events-none">
+                                            <button onClick={handleBatchSubmit} className={`pointer-events-auto w-full max-w-lg py-4 rounded-xl text-white font-bold shadow-2xl text-lg flex items-center justify-center gap-3 active:scale-95 transition-transform ${globalSettings.type === 'IN' ? 'bg-gradient-to-r from-blue-600 to-blue-500' : globalSettings.type === 'OUT' ? 'bg-gradient-to-r from-orange-600 to-orange-500' : 'bg-gradient-to-r from-purple-600 to-purple-500'}`}>
+                                                <i className="fa-solid fa-paper-plane"></i> 確認送出 ({batchCart.length} 筆)
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {page === 'history' && (
+                                <div className="p-4 space-y-4 max-w-5xl mx-auto w-full">
+                                    <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center">
+                                        <div className="flex gap-2 flex-1 w-full md:w-auto">
+                                            <button onClick={handleRefreshLogs} className="flex-1 md:flex-none bg-white border border-gray-300 px-4 py-2 rounded-lg shadow-sm hover:bg-gray-50" title="重整"><i className="fa-solid fa-rotate-right"></i></button>
+                                            <button onClick={() => exportData(logs, '紀錄')} className="flex-1 md:flex-none bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700" title="匯出"><i className="fa-solid fa-file-export"></i></button>
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="bg-white p-3 rounded-lg shadow-sm space-y-2">
+                                        <div className="flex flex-col gap-2">
+                                            <div className="flex gap-2">
+                                                <input type="text" placeholder="品名或序號..." className="flex-1 p-2 border rounded-lg text-sm min-w-0" value={logFilter.keyword} onChange={e => setLogFilter({...logFilter, keyword: e.target.value})} />
+                                                <select className="p-2 border rounded-lg text-sm flex-shrink-0 w-24 md:w-32 bg-white" value={logFilter.type} onChange={e => setLogFilter({...logFilter, type: e.target.value})}><option value="">全部</option><option value="IN">入庫</option><option value="OUT">出庫</option></select>
+                                            </div>
+                                            <input type="date" className="w-full md:w-auto p-2 border rounded-lg text-sm bg-gray-50 max-w-full box-border" value={logFilter.date} onChange={e => setLogFilter({...logFilter, date: e.target.value})} />
+                                        </div>
+                                    </div>
+                                    <div className="space-y-3">{filteredLogs.map((log, idx) => (
+                                        <div key={idx} className="bg-white p-3 rounded-lg shadow-sm border-l-4 border-gray-300 flex flex-col gap-1">
+                                            <div className="flex justify-between items-start">
+                                                <div className="flex-1 min-w-0 mr-2">
+                                                    <div className="font-bold text-lg text-gray-800 break-words">{log.品名}</div>
+                                                    <div className="text-xs text-gray-500 mt-1">{new Date(log.時間).toLocaleString()}</div>
+                                                </div>
+                                                <div className="text-right flex-shrink-0">
+                                                    <span className={`block font-bold text-lg ${log.類型 === 'IN' ? 'text-blue-600' : log.類型 === 'OUT' ? 'text-orange-600' : 'text-purple-600'}`}>{log.變動數量 > 0 ? '+' : ''}{log.變動數量}</span>
+                                                    <span className="text-xs text-gray-400">餘 {log.結餘}</span>
+                                                </div>
+                                            </div>
+                                            <div className="text-sm text-gray-600 bg-gray-50 p-1 rounded mt-1 flex justify-between"><span><i className="fa-solid fa-user mr-1"></i> {log.異動者 || '未填寫'}</span><span>{log.類型.includes('盤點') ? <span className='text-purple-600 font-bold'>盤點</span> : log.類型 === 'IN' ? '入庫' : '出庫'}</span></div>
+                                            {(log.倉庫 || log.地點 || log.位置) && (<div className="text-xs text-gray-500 flex items-center gap-1"><i className="fa-solid fa-map-pin"></i>{[log.倉庫, log.地點, log.位置].filter(Boolean).join(' / ')}</div>)}
+                                            {(log.序號 || log.相關序號) && (<div className="text-xs text-gray-500 mt-1 border-t pt-1 border-dashed break-all"><i className="fa-solid fa-barcode mr-1"></i>SN: {log.序號 || log.相關序號}</div>)}
+                                            {(log.類型 !== 'OUT' && log.備註) && (<div className="text-xs text-gray-500 mt-1 flex items-center gap-1 bg-gray-50 p-1 rounded break-all"><i className="fa-solid fa-circle-info text-blue-400 mr-1 flex-shrink-0"></i><span className="font-semibold mr-1 flex-shrink-0">備註:</span><span>{log.備註}</span></div>)}
+                                            {(log.類型 === 'OUT' && log.使用地點) && (<div className="text-xs text-gray-500 mt-1 flex items-center gap-1 bg-gray-50 p-1 rounded break-all"><i className="fa-solid fa-location-dot text-orange-400 mr-1 flex-shrink-0"></i><span className="font-semibold mr-1 flex-shrink-0">使用地點:</span><span>{log.使用地點}</span></div>)}
+                                        </div>
+                                    ))}</div>
+                                </div>
+                            )}
+
+                        </div>
+
+                        {/* 手機版底部導航 */}
+                        <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 flex justify-around py-3 text-[10px] font-black text-slate-400 z-[50] shadow-[0_-10px_20px_-5px_rgba(0,0,0,0.05)] pb-6">
+                            {navItems.map(item => (
+                                <button key={item.id} onClick={() => { setPage(item.id); if(item.id === 'history') loadLogs(); }} className={`flex flex-col items-center transition-all ${page === item.id ? 'text-blue-600 scale-110' : 'text-slate-300'}`}>
+                                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center mb-1 ${page === item.id ? 'bg-blue-600 text-white shadow-lg shadow-blue-200' : 'bg-slate-50'}`}><i className={`fa-solid ${item.icon} text-sm`}></i></div><span className="uppercase tracking-tighter">{item.label.substring(2)}</span>
+                                </button>
+                            ))}
+                        </nav>
+                    </main>
                 </div>
             );
         };
