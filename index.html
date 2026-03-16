@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>潮基庫存管理系統</title>
+    <title>庫存管理系統</title>
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#1d4ed8">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/2897/2897785.png">
 
-    <!-- 載入必要的函式庫 -->
+    <!-- 載入函式庫 -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -29,7 +29,6 @@
             -webkit-tap-highlight-color: transparent; 
         }
         
-        /* 自定義捲軸 */
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
@@ -42,10 +41,7 @@
         #reader > div { display: none !important; }
         .scan-line { position: absolute; top: 50%; left: 5%; right: 5%; height: 2px; background: red; box-shadow: 0 0 4px red; z-index: 10; animation: pulse-line 1.5s infinite; }
         @keyframes pulse-line { 0% { opacity: 0.6; box-shadow: 0 0 2px red; } 50% { opacity: 1; box-shadow: 0 0 8px red; } 100% { opacity: 0.6; box-shadow: 0 0 2px red; } }
-        .scan-feedback { animation: slide-up 0.3s ease-out; }
-        @keyframes slide-up { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
         
-        /* 狀態指示燈 */
         .sync-indicator { font-size: 0.75rem; display: flex; align-items: center; gap: 4px; }
         .sync-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
         .sync-dot.syncing { background-color: #f59e0b; animation: pulse 1s infinite; }
@@ -53,25 +49,26 @@
         .sync-dot.error { background-color: #ef4444; }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
 
-        /* Sortable 樣式 */
         .sortable-ghost { opacity: 0.4; background-color: #e5e7eb; border: 2px dashed #9ca3af; }
         .sortable-drag { cursor: grabbing; opacity: 1; background: white; transform: scale(1.02); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
         .drag-handle { cursor: grab; touch-action: none; padding: 0.5rem; }
+        
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
     </style>
 </head>
 <body>
     <div id="root"></div>
 
     <script type="text/babel">
-        // Google Apps Script URL
+        // 全域錯誤捕捉
+        window.onerror = function(message, source, lineno, colno, error) {
+            Swal.fire({ title: '程式發生錯誤', text: `${message} (Line: ${lineno})`, icon: 'error' });
+        };
+
         const API_URL = "https://script.google.com/macros/s/AKfycbwo5zBN_DP3r5O38WpyrXmDr3rO7Gsircpi32d0kIIlHHaUcpqOhzJgi65RiytuJf83/exec"; 
 
         const { useState, useEffect, useMemo, useRef } = React;
-
-        // 註冊 Service Worker
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => navigator.serviceWorker.register('./service-worker.js').catch(() => {}));
-        }
 
         const getCurrentDateTime = () => {
             const now = new Date();
@@ -79,12 +76,73 @@
             return now.toISOString().slice(0, 16);
         };
 
+        // 解析標籤字串 (將 "A, B, C" 轉成陣列)
+        const parseTags = (tagStr) => {
+            if (!tagStr) return [];
+            return String(tagStr).split(/[,，]/).map(t => t.trim()).filter(Boolean);
+        };
+
+        // === 自訂標籤輸入器元件 ===
+        const TagEditor = ({ tagsString, onChange }) => {
+            const [text, setText] = useState('');
+            const tags = parseTags(tagsString);
+
+            const addTag = (val) => {
+                const newTag = val.trim().replace(/[,，]/g, '');
+                if (newTag && !tags.includes(newTag)) {
+                    onChange([...tags, newTag].join(', '));
+                }
+                setText('');
+            };
+
+            const removeTag = (tagToRemove) => {
+                onChange(tags.filter(t => t !== tagToRemove).join(', '));
+            };
+
+            return (
+                <div className="flex flex-col border border-gray-300 rounded-lg bg-white overflow-hidden focus-within:ring-2 focus-within:ring-blue-500 transition-all shadow-sm">
+                    <div className="flex flex-wrap gap-1 p-2 items-center min-h-[42px]">
+                        {tags.map(tag => (
+                            <span key={tag} className="bg-indigo-100 text-indigo-700 text-xs px-2.5 py-1 rounded flex items-center gap-1.5 font-bold border border-indigo-200">
+                                {tag} <i className="fa-solid fa-xmark cursor-pointer hover:text-red-500 rounded-full hover:bg-indigo-200 p-0.5 transition-colors" onClick={() => removeTag(tag)}></i>
+                            </span>
+                        ))}
+                        <input
+                            type="text"
+                            list="list-categories"
+                            placeholder={tags.length === 0 ? "新增分類標籤 (可輸入多個)..." : "新增標籤..."}
+                            className="flex-1 outline-none text-sm min-w-[130px] bg-transparent p-1"
+                            value={text}
+                            onChange={e => {
+                                const val = e.target.value;
+                                // 偵測到逗號自動加入標籤
+                                if (val.includes(',') || val.includes('，')) {
+                                    addTag(val);
+                                } else {
+                                    setText(val);
+                                }
+                            }}
+                            onKeyDown={e => {
+                                if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    addTag(text);
+                                } else if (e.key === 'Backspace' && text === '' && tags.length > 0) {
+                                    removeTag(tags[tags.length - 1]);
+                                }
+                            }}
+                            onBlur={() => { if(text) addTag(text); }}
+                        />
+                    </div>
+                </div>
+            );
+        };
+
         // === 掃描器元件 ===
         const Scanner = ({ onScan, onClose }) => {
             const [lastScanned, setLastScanned] = useState(null);
             const scannerRef = useRef(null);
             const onScanRef = useRef(onScan);
-            
+
             useEffect(() => { onScanRef.current = onScan; }, [onScan]);
 
             useEffect(() => {
@@ -123,16 +181,18 @@
 
             return (
                 <div className="fixed inset-0 bg-black bg-opacity-95 z-[100] flex flex-col items-center justify-center">
-                    <div className="relative w-full max-w-md p-4">
-                        <h3 className="text-white text-center mb-2 font-bold text-lg">掃描模式</h3>
-                        <div className="relative rounded-lg overflow-hidden shadow-2xl border border-gray-700 bg-black">
-                            <div id="reader" className="w-full h-72 bg-black"></div> 
+                    <div className="relative w-full max-w-md p-4 text-center">
+                        <h3 className="text-white mb-4 font-bold text-lg">條碼掃描中</h3>
+                        <div className="relative rounded-lg overflow-hidden shadow-2xl border border-gray-700 bg-black mx-auto">
+                            <div id="reader" className="w-full h-72"></div> 
                             <div className="scan-line"></div>
-                            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[250px] h-[150px] border-2 border-red-500 rounded opacity-50 pointer-events-none box-border z-10"></div>
-                            {lastScanned && (<div className="absolute bottom-0 left-0 right-0 bg-green-600 bg-opacity-90 text-white py-2 px-3 text-center scan-feedback z-20"><div className="text-xs opacity-80">已讀取</div><div className="font-mono font-bold text-lg truncate">{lastScanned}</div></div>)}
+                            {lastScanned && (
+                                <div className="absolute bottom-0 left-0 right-0 bg-green-600 p-2 text-white font-bold animate-pulse">
+                                    成功讀取: {lastScanned}
+                                </div>
+                            )}
                         </div>
-                        <p className="text-gray-400 text-center mt-4 text-sm">請將紅色輔助線對準條碼中央</p>
-                        <button onClick={onClose} className="mt-8 w-full py-3 bg-gray-800 text-white rounded-lg font-bold border border-gray-600 hover:bg-gray-700 transition"><i className="fa-solid fa-check mr-2"></i> 完成</button>
+                        <button onClick={onClose} className="mt-8 px-8 py-3 bg-red-600 text-white rounded-full font-bold shadow-lg">關閉掃描儀</button>
                     </div>
                 </div>
             );
@@ -147,13 +207,25 @@
             const [syncStatus, setSyncStatus] = useState('idle');
             const [search, setSearch] = useState('');
             const [scanning, setScanning] = useState(false);
-            const [logFilter, setLogFilter] = useState({ keyword: '', date: '', type: '' });
             
-            const [customOrder, setCustomOrder] = useState(() => { const saved = localStorage.getItem('inventory_sort_order'); return saved ? JSON.parse(saved) : []; });
-            const [batchCart, setBatchCart] = useState(() => { const savedCart = localStorage.getItem('inventory_cart'); return savedCart ? JSON.parse(savedCart) : []; });
-            const [globalSettings, setGlobalSettings] = useState(() => { const savedSettings = localStorage.getItem('inventory_settings'); return savedSettings ? JSON.parse(savedSettings) : { type: 'IN', modifier: '', customDate: getCurrentDateTime() }; });
+            const [logFilter, setLogFilter] = useState({ keyword: '', date: '', type: '', category: '' });
+            const [categoryFilter, setCategoryFilter] = useState('');
+            
+            const [customOrder, setCustomOrder] = useState(() => { 
+                const saved = localStorage.getItem('inventory_sort_order'); 
+                return saved ? JSON.parse(saved) : []; 
+            });
+            const [batchCart, setBatchCart] = useState(() => { 
+                const savedCart = localStorage.getItem('inventory_cart'); 
+                return savedCart ? JSON.parse(savedCart) : []; 
+            });
+            const [globalSettings, setGlobalSettings] = useState(() => { 
+                const savedSettings = localStorage.getItem('inventory_settings'); 
+                return savedSettings ? JSON.parse(savedSettings) : { type: 'IN', modifier: '', customDate: getCurrentDateTime() }; 
+            });
             const [isTimeManual, setIsTimeManual] = useState(false);
-            const [quickItem, setQuickItem] = useState({ barcode: '', name: '', qty: 1, warehouse: '', location: '', position: '', minStock: 5, note: '' });
+
+            const [quickItem, setQuickItem] = useState({ barcode: '', name: '', qty: 1, warehouse: '', location: '', position: '', minStock: 5, note: '', category: '' });
 
             const fileInputRef = useRef(null);
             const listRef = useRef(null);
@@ -164,12 +236,17 @@
             useEffect(() => { localStorage.setItem('inventory_cart', JSON.stringify(batchCart)); }, [batchCart]);
             useEffect(() => { localStorage.setItem('inventory_settings', JSON.stringify(globalSettings)); }, [globalSettings]);
             useEffect(() => { localStorage.setItem('inventory_sort_order', JSON.stringify(customOrder)); }, [customOrder]);
+            
             useEffect(() => {
-                const timer = setInterval(() => { if (!isTimeManual) { setGlobalSettings(prev => ({ ...prev, customDate: getCurrentDateTime() })); } }, 1000);
+                const timer = setInterval(() => { 
+                    if (!isTimeManual) { 
+                        setGlobalSettings(prev => ({ ...prev, customDate: getCurrentDateTime() })); 
+                    } 
+                }, 1000);
                 return () => clearInterval(timer);
             }, [isTimeManual]);
 
-            // SortableJS hook
+            // 初始化 SortableJS
             useEffect(() => {
                 if (page === 'list' && listRef.current && !search && inventory.length > 0) {
                     const sortable = new Sortable(listRef.current, {
@@ -188,17 +265,33 @@
                 const locations = [...new Set(inventory.map(i => i.地點).filter(Boolean))];
                 const positions = [...new Set(inventory.map(i => i.位置).filter(Boolean))];
                 const names = [...new Set(inventory.map(i => i.品名).filter(Boolean))];
-                return { warehouses, locations, positions, names };
-            }, [inventory]);
+                
+                // 萃取所有單獨的標籤
+                const allTags = inventory.flatMap(i => parseTags(i.分類));
+                const logTags = logs.flatMap(l => parseTags(l.分類));
+                const uniqueCategories = [...new Set([...allTags, ...logTags])].sort();
+
+                return { warehouses, locations, positions, names, categories: uniqueCategories };
+            }, [inventory, logs]);
 
             const groupedInventory = useMemo(() => {
                 const grouped = {};
                 inventory.forEach(item => {
                     const key = item.品名;
                     if (!grouped[key]) {
-                        grouped[key] = { 品名: item.品名, 總數量: 0, 警戒值: parseInt(item.警戒值 || 0), details: [] };
+                        grouped[key] = {
+                            品名: item.品名,
+                            總數量: 0,
+                            警戒值: parseInt(item.警戒值 || 0),
+                            分類: item.分類 || '', // 保存原始字串
+                            details: []
+                        };
                     }
                     grouped[key].總數量 += parseInt(item.數量 || 0);
+                    // 若當前群組分類字串長度小於新項目的，就更新（確保抓到最多標籤的紀錄）
+                    if (item.分類 && item.分類.length > grouped[key].分類.length) {
+                        grouped[key].分類 = item.分類; 
+                    }
                     grouped[key].details.push(item);
                 });
                 let result = Object.values(grouped);
@@ -215,29 +308,55 @@
                 return result;
             }, [inventory, customOrder]);
 
+            // 建立一個供紀錄查詢的分類對照表 (從現有庫存抓取最新分類)
+            const inventoryTagsMap = useMemo(() => {
+                const map = {};
+                groupedInventory.forEach(g => {
+                    map[g.品名] = parseTags(g.分類);
+                });
+                return map;
+            }, [groupedInventory]);
+
             const loadData = async (forceUpdate = false) => {
                 const cachedInventory = localStorage.getItem('inventory_cache');
-                if (cachedInventory && !forceUpdate) { setInventory(JSON.parse(cachedInventory)); setSyncStatus('syncing'); } else { setLoading(true); }
+                if (cachedInventory && !forceUpdate) { 
+                    setInventory(JSON.parse(cachedInventory)); 
+                    setSyncStatus('syncing'); 
+                } else { 
+                    setLoading(true); 
+                }
                 try {
                     const res = await fetch(`${API_URL}?action=getInventory`);
                     const json = await res.json();
                     if (json.status === 'success') {
-                        setInventory(json.data); localStorage.setItem('inventory_cache', JSON.stringify(json.data));
-                        setSyncStatus('synced'); setTimeout(() => setSyncStatus('idle'), 3000);
-                    }
-                } catch (e) { setSyncStatus('error'); }
+                        setInventory(json.data); 
+                        localStorage.setItem('inventory_cache', JSON.stringify(json.data));
+                        setSyncStatus('synced');
+                        setTimeout(() => setSyncStatus('idle'), 3000);
+                    } else { setSyncStatus('error'); }
+                } catch (e) { 
+                    setSyncStatus('error'); 
+                    if (!cachedInventory) Swal.fire("連線錯誤", "無法讀取資料", "error"); 
+                }
                 setLoading(false);
             };
 
             const loadLogs = async () => {
                 setLoading(true);
+                setSyncStatus('syncing');
                 try {
                     const res = await fetch(`${API_URL}?action=getLogs`);
                     const json = await res.json();
-                    if (json.status === 'success') setLogs(json.data);
-                } catch (e) {}
+                    if (json.status === 'success') {
+                         setLogs(json.data);
+                         setSyncStatus('synced'); setTimeout(() => setSyncStatus('idle'), 3000);
+                    } else { setSyncStatus('error'); }
+                } catch (e) { setSyncStatus('error'); }
                 setLoading(false);
             };
+
+            const handleRefreshLogs = () => { setLogFilter({ keyword: '', date: '', type: '', category: '' }); loadLogs(); };
+            const handleRefreshInventory = () => { loadData(true); };
 
             const countSerials = (str) => !str ? 1 : (str.split(/[\n,]+/).filter(s => s.trim() !== "").length || 1);
 
@@ -249,14 +368,13 @@
                     const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
                     if(data.length) Swal.fire({ title: '確認匯入', text: `共 ${data.length} 筆`, showCancelButton: true }).then(r => r.isConfirmed && (async () => {
                         setLoading(true);
-                        const formatted = data.map(r => ({ name: r['品名'], qty: r['數量'], warehouse: r['倉庫'], location: r['地點'], position: r['位置'], barcode: r['序號'], note: r['備註'], minStock: r['警戒值'], type: 'IN', qtyChange: r['數量'] }));
+                        const formatted = data.map(r => ({ name: r['品名'], qty: r['數量'], warehouse: r['倉庫'], location: r['地點'], position: r['位置'], barcode: r['序號'], note: r['備註'], minStock: r['警戒值'], category: r['分類'], type: 'IN', qtyChange: r['數量'] }));
                         const formData = new URLSearchParams(); formData.append('action', 'batchUpdate'); formData.append('modifier', '匯入作業'); formData.append('customDate', getCurrentDateTime()); formData.append('batchData', JSON.stringify(formatted));
                         await fetch(API_URL, { method: 'POST', mode: 'no-cors', body: formData.toString() });
                         setLoading(false); loadData(true);
                     })());
                 };
                 reader.readAsBinaryString(file);
-                e.target.value = '';
             };
 
             const handleCameraScan = (code) => {
@@ -265,7 +383,7 @@
                     let updateData = {};
                     if (!prev.name) {
                         const item = inventory.find(i => { const serials = i.序號 ? String(i.序號).split(',') : []; return serials.includes(code); });
-                        if (item) updateData = { name: item.品名, warehouse: item.倉庫, location: item.地點, position: item.位置, minStock: item.警戒值 };
+                        if (item) updateData = { name: item.品名, warehouse: item.倉庫, location: item.地點, position: item.位置, minStock: item.警戒值, category: item.分類 };
                     }
                     return { ...prev, barcode: newBarcode, qty: countSerials(newBarcode), ...updateData };
                 });
@@ -283,7 +401,7 @@
                             return { ...prev, barcode: combined, qty: countSerials(combined) };
                         });
                         Swal.fire('成功', `已匯入 ${json.data.length} 筆掃描資料`, 'success');
-                    } else { Swal.fire('提示', '目前沒有新的掃描資料', 'info'); }
+                    } else { Swal.fire('提示', '無新資料', 'info'); }
                 } catch (e) { Swal.fire('錯誤', '無法抓取雲端資料', 'error'); }
                 setLoading(false);
             };
@@ -291,50 +409,86 @@
             const handleQuickInputNameChange = (val) => {
                 const matched = inventory.filter(i => i.品名 === val);
                 let update = { name: val };
-                if(matched.length === 1) update = { ...update, warehouse: matched[0].倉庫, location: matched[0].地點, position: matched[0].位置, minStock: matched[0].警戒值 };
+                if(matched.length > 0) {
+                    // 抓第一筆符合的資料填入預設值
+                    update = { ...update, warehouse: matched[0].倉庫, location: matched[0].地點, position: matched[0].位置, minStock: matched[0].警戒值, category: matched[0].分類 };
+                }
                 setQuickItem(prev => ({...prev, ...update}));
             };
 
             const handleAddQuickItemToCart = () => {
                 if(!quickItem.name && !quickItem.barcode) return Swal.fire('提示', '請輸入名稱或條碼', 'info');
                 if (globalSettings.type === 'SET' && !quickItem.name && !quickItem.barcode) return Swal.fire('錯誤', '盤點模式必須輸入品名或序號', 'warning');
-                setBatchCart(prev => [{ ...quickItem, name: quickItem.name || '', qty: quickItem.qty || 1, warehouse: quickItem.warehouse || '', minStock: quickItem.minStock || 5 }, ...prev]);
-                setQuickItem({ barcode: '', name: '', qty: 1, warehouse: '', location: '', position: '', minStock: 5, note: '' });
+                setBatchCart(prev => [{ ...quickItem, name: quickItem.name || '', qty: quickItem.qty || 1, warehouse: quickItem.warehouse || '', minStock: quickItem.minStock || 5, category: quickItem.category || '' }, ...prev]);
+                setQuickItem({ barcode: '', name: '', qty: 1, warehouse: '', location: '', position: '', minStock: 5, note: '', category: '' });
             };
+            
             const handleRemoveItem = (i) => setBatchCart(p => p.filter((_, idx) => idx !== i));
             const handleEditItem = (i) => { setEditingIndex(i); setEditItem({ ...batchCart[i] }); };
             const handleSaveEdit = () => { setBatchCart(p => { const n=[...p]; n[editingIndex]=editItem; return n; }); setEditingIndex(null); };
+            
             const onEditNameChange = (val) => {
                 const matched = inventory.filter(i => i.品名 === val);
                 let update = { name: val };
-                if(matched.length === 1) update = { ...update, warehouse: matched[0].倉庫, location: matched[0].地點, position: matched[0].位置, minStock: matched[0].警戒值 };
+                if(matched.length > 0) update = { ...update, warehouse: matched[0].倉庫, location: matched[0].地點, position: matched[0].位置, minStock: matched[0].警戒值, category: matched[0].分類 };
                 setEditItem({...editItem, ...update});
             };
 
             const handleBatchSubmit = async () => {
                 if (batchCart.length === 0) return;
                 setLoading(true);
+                setSyncStatus('syncing');
                 const payload = batchCart.map(item => ({ ...item, type: globalSettings.type, qtyChange: globalSettings.type === 'IN' ? item.qty : (globalSettings.type === 'OUT' ? -item.qty : item.qty), qty: item.qty }));
                 const formData = new URLSearchParams();
                 formData.append('action', 'batchUpdate'); formData.append('modifier', globalSettings.modifier); formData.append('customDate', globalSettings.customDate); formData.append('batchData', JSON.stringify(payload));
-                try { await fetch(API_URL, { method: 'POST', mode: 'no-cors', body: formData.toString() }); Swal.fire({ icon: 'success', title: '完成', timer: 1500, showConfirmButton: false }); setBatchCart([]); loadData(true); } catch (e) {}
+                try { 
+                    await fetch(API_URL, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: formData.toString() }); 
+                    Swal.fire({ icon: 'success', title: '完成', timer: 1500, showConfirmButton: false }); 
+                    setBatchCart([]); 
+                    loadData(true); 
+                } catch (e) { 
+                    Swal.fire('錯誤', '連線失敗', 'error'); 
+                    setSyncStatus('error');
+                }
                 setLoading(false);
             };
 
-            const handleRefreshLogs = () => { setLogFilter({ keyword: '', date: '', type: '' }); loadLogs(); };
-            const handleRefreshInventory = () => { loadData(true); };
-            const exportData = (data, title) => { if(!data.length) return; const h=Object.keys(data[0]).join(","); const r=data.map(o=>Object.values(o).map(v=>`"${v}"`).join(",")); const c="\uFEFF"+[h,...r].join("\n"); const a=document.createElement('a'); a.href='data:text/csv;charset=utf-8,'+encodeURI(c); a.download=`${title}.csv`; a.click(); };
+            const exportData = (data, title) => {
+                if (!data.length) return Swal.fire("無資料可匯出");
+                const header = Object.keys(data[0]).join(",");
+                const rows = data.map(obj => Object.values(obj).map(v => `"${v}"`).join(","));
+                const csv = "\uFEFF" + [header, ...rows].join("\n");
+                const a = document.createElement('a'); a.href = 'data:text/csv;charset=utf-8,' + encodeURI(csv); a.download = `${title}.csv`; a.click();
+            };
 
-            const filteredGroupedInventory = groupedInventory.filter(g => g.品名.toLowerCase().includes(search.toLowerCase()) || g.details.some(d => (d.序號 && d.序號.toString().includes(search)) || (d.地點 && d.地點.toLowerCase().includes(search.toLowerCase()))));
+            // --- 庫存清單過濾 (支援多重標籤) ---
+            const filteredGroupedInventory = groupedInventory.filter(g => {
+                const itemTags = parseTags(g.分類);
+                return (g.品名.toLowerCase().includes(search.toLowerCase()) || 
+                g.details.some(d => (d.序號 && d.序號.toString().includes(search)) || (d.地點 && d.地點.toLowerCase().includes(search.toLowerCase())))) &&
+                (!categoryFilter || itemTags.includes(categoryFilter));
+            });
+            
             const lowStockGroups = groupedInventory.filter(g => g.總數量 < g.警戒值);
             const lowStockItemsForExport = lowStockGroups.flatMap(g => g.details);
-            const filteredLogs = logs.filter(log => {
+            
+            // --- 異動紀錄處理 (抓取最新庫存標籤) ---
+            const processedLogs = useMemo(() => {
+                return logs.map(log => {
+                    // 優先使用庫存最新的標籤，若庫存已被刪除才使用當時紀錄的標籤
+                    const displayTags = inventoryTagsMap[log.品名] || parseTags(log.分類);
+                    return { ...log, displayTags };
+                });
+            }, [logs, inventoryTagsMap]);
+
+            const filteredLogs = processedLogs.filter(log => {
                 const sn = log.序號 || log.相關序號 || '';
                 const matchKeyword = !logFilter.keyword || (log.品名 && log.品名.includes(logFilter.keyword)) || (sn && sn.includes(logFilter.keyword));
                 const logDateStr = new Date(log.時間).toISOString().slice(0, 10);
                 const matchDate = !logFilter.date || logDateStr === logFilter.date;
                 const matchType = !logFilter.type || log.類型 === logFilter.type;
-                return matchKeyword && matchDate && matchType;
+                const matchCategory = !logFilter.category || log.displayTags.includes(logFilter.category);
+                return matchKeyword && matchDate && matchType && matchCategory;
             });
 
             const navItems = [
@@ -360,25 +514,43 @@
                         <div className="p-6 border-t border-slate-800 text-center"><div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] uppercase tracking-widest ${syncStatus === 'synced' ? 'bg-green-500/10 text-green-500' : 'bg-yellow-500/10 text-yellow-500'}`}><span className={`w-2 h-2 rounded-full ${syncStatus === 'synced' ? 'bg-green-500' : 'bg-yellow-500 animate-pulse'}`}></span>{syncStatus === 'synced' ? 'Online' : 'Syncing'}</div></div>
                     </aside>
 
-                    <main className="flex-1 flex flex-col min-w-0 bg-slate-50">
-                        <div className="md:hidden bg-blue-700 text-white p-4 sticky top-0 z-20 shadow flex justify-between items-center"><h1 className="font-bold text-lg flex items-center"><i className="fa-solid fa-warehouse mr-2"></i>庫存管理 {syncStatus !== 'idle' && (<span className="ml-3 sync-indicator text-blue-100"><span className={`sync-dot ${syncStatus}`}></span> {syncStatus === 'syncing' ? '更新...' : syncStatus === 'synced' ? 'OK' : 'Err'}</span>)}</h1>{loading && <div className="loader border-white border-t-transparent absolute right-4"></div>}</div>
-                        <div className="hidden md:flex bg-white p-4 shadow-sm justify-between items-center border-b"><div className="font-bold text-gray-700 text-lg">{page === 'list' ? '庫存總覽' : page === 'alert' ? '庫存告警' : page === 'form' ? '批量作業' : '歷史紀錄'}</div><div className="flex items-center gap-4">{loading && <div className="loader border-blue-600 border-t-transparent"></div>}<div className="text-sm text-gray-500">{getCurrentDateTime().replace('T', ' ')}</div></div></div>
+                    {/* 主內容區 */}
+                    <main className="flex-1 flex flex-col min-w-0 bg-slate-50 relative h-screen overflow-hidden">
+                        
+                        {/* 手機版 Header */}
+                        <div className="md:hidden bg-blue-700 text-white p-4 sticky top-0 z-20 shadow flex justify-between items-center flex-none">
+                            <h1 className="font-bold text-lg flex items-center"><i className="fa-solid fa-warehouse mr-2"></i>庫存管理 {syncStatus !== 'idle' && (<span className="ml-3 sync-indicator text-blue-100"><span className={`sync-dot ${syncStatus}`}></span> {syncStatus === 'syncing' ? '更新...' : syncStatus === 'synced' ? 'OK' : 'Err'}</span>)}</h1>
+                            {loading && <div className="loader border-white border-t-transparent absolute right-4"></div>}
+                        </div>
+
+                        {/* 桌面版 Topbar */}
+                        <div className="hidden md:flex bg-white p-4 shadow-sm justify-between items-center border-b flex-none"><div className="font-bold text-gray-700 text-lg">{page === 'list' ? '庫存總覽' : page === 'alert' ? '庫存告警' : page === 'form' ? '批量作業' : '歷史紀錄'}</div><div className="flex items-center gap-4">{loading && <div className="loader border-blue-600 border-t-transparent"></div>}<div className="text-sm text-gray-500">{getCurrentDateTime().replace('T', ' ')}</div></div></div>
 
                         <div className="flex-1 overflow-y-auto p-4 md:p-8 pb-28 md:pb-8">
-
+                            
                             {scanning && <Scanner onScan={handleCameraScan} onClose={() => { setScanning(false); setPage('form'); }} />}
                             <input type="file" ref={fileInputRef} onChange={handleFileImport} className="hidden" accept=".xlsx,.xls,.csv" />
 
-                            {/* 編輯 Modal */}
                             {editingIndex !== null && editItem && (
-                                <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-                                    <div className="bg-white rounded-lg w-full max-w-sm p-4 space-y-3 shadow-xl">
+                                <div className="fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4">
+                                    <div className="bg-white rounded-xl w-full max-w-sm p-5 space-y-4 shadow-xl">
                                         <h3 className="font-bold text-lg border-b pb-2">編輯項目</h3>
                                         <div><label className="text-xs font-bold text-gray-500">品名</label><input list="list-names" className="w-full p-2 border rounded" value={editItem.name} onChange={e => onEditNameChange(e.target.value)} /></div>
+                                        
+                                        {/* 條件渲染：只有在非出庫模式下，才顯示分類編輯器 */}
+                                        {globalSettings.type !== 'OUT' && (
+                                            <div><label className="text-xs font-bold text-gray-500">分類標籤</label><TagEditor tagsString={editItem.category} onChange={val => setEditItem({...editItem, category: val})} /></div>
+                                        )}
+
                                         <div><label className="text-xs font-bold text-gray-500">序號</label><textarea rows="2" className="w-full p-2 border rounded text-sm font-mono" value={editItem.barcode} onChange={e => setEditItem({...editItem, barcode: e.target.value, qty: countSerials(e.target.value) })}></textarea></div>
                                         <div className="flex gap-2"><div className="flex-1"><label className="text-xs font-bold text-gray-500">數量</label><input type="number" className="w-full p-2 border rounded text-center font-bold" value={editItem.qty} onChange={e => setEditItem({...editItem, qty: parseInt(e.target.value)||0})} /></div><div className="flex-1"><label className="text-xs font-bold text-gray-500">警戒值</label><input type="number" className="w-full p-2 border rounded text-center" value={editItem.minStock} onChange={e => setEditItem({...editItem, minStock: parseInt(e.target.value)||0})} /></div></div>
-                                        <div className="grid grid-cols-2 gap-2 text-sm"><div><input list="list-warehouses" placeholder="倉庫" className="w-full p-2 border rounded" value={editItem.warehouse} onChange={e => setEditItem({...editItem, warehouse: e.target.value})} /></div><div><input list="list-locations" placeholder="地點" className="w-full p-2 border rounded" value={editItem.location} onChange={e => setEditItem({...editItem, location: e.target.value})} /></div><div><input list="list-positions" placeholder="位置" className="w-full p-2 border rounded" value={editItem.position} onChange={e => setEditItem({...editItem, position: e.target.value})} /></div><input placeholder={globalSettings.type === 'OUT' ? "使用地點" : "備註"} className="p-2 border rounded" value={editItem.note} onChange={e => setEditItem({...editItem, note: e.target.value})} /></div>
-                                        <div className="flex gap-2 pt-2"><button onClick={() => setEditingIndex(null)} className="flex-1 py-2 bg-gray-200 rounded text-gray-700">取消</button><button onClick={handleSaveEdit} className="flex-1 py-2 bg-blue-600 text-white rounded shadow">確定</button></div>
+                                        <div className="grid grid-cols-3 gap-2 text-sm">
+                                            <div><input list="list-warehouses" placeholder="倉庫" className="w-full p-2 border rounded" value={editItem.warehouse} onChange={e => setEditItem({...editItem, warehouse: e.target.value})} /></div>
+                                            <div><input list="list-locations" placeholder="地點" className="w-full p-2 border rounded" value={editItem.location} onChange={e => setEditItem({...editItem, location: e.target.value})} /></div>
+                                            <div><input list="list-positions" placeholder="位置" className="w-full p-2 border rounded" value={editItem.position} onChange={e => setEditItem({...editItem, position: e.target.value})} /></div>
+                                        </div>
+                                        <input placeholder={globalSettings.type === 'OUT' ? "使用地點" : "備註"} className="w-full p-2 border rounded text-sm" value={editItem.note} onChange={e => setEditItem({...editItem, note: e.target.value})} />
+                                        <div className="flex gap-3 pt-2"><button onClick={() => setEditingIndex(null)} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 font-bold">取消</button><button onClick={handleSaveEdit} className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow font-bold">確定儲存</button></div>
                                     </div>
                                 </div>
                             )}
@@ -387,22 +559,36 @@
                             <datalist id="list-warehouses">{uniqueOptions.warehouses.map((v, i) => <option key={i} value={v} />)}</datalist>
                             <datalist id="list-locations">{uniqueOptions.locations.map((v, i) => <option key={i} value={v} />)}</datalist>
                             <datalist id="list-positions">{uniqueOptions.positions.map((v, i) => <option key={i} value={v} />)}</datalist>
+                            <datalist id="list-categories">{uniqueOptions.categories.map((v, i) => <option key={i} value={v} />)}</datalist>
 
                             {page === 'list' && (
                                 <div className="space-y-4">
                                     <div className="flex gap-2 max-w-4xl">
                                         <input type="text" placeholder="搜尋..." className="w-full px-4 py-2 border rounded-lg shadow-sm" value={search} onChange={e => setSearch(e.target.value)} />
+                                        <select className="p-2 border rounded-lg shadow-sm bg-white font-medium text-gray-700" value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}>
+                                            <option value="">所有標籤分類</option>
+                                            {uniqueOptions.categories.map((c, i) => <option key={i} value={c}>{c}</option>)}
+                                        </select>
                                         <button onClick={handleRefreshInventory} className="bg-white border text-gray-700 px-4 rounded-lg shadow-sm hover:bg-gray-50" title="重整"><i className="fa-solid fa-rotate-right"></i></button>
                                         <button onClick={() => fileInputRef.current.click()} className="bg-purple-600 text-white px-4 rounded-lg shadow hover:bg-purple-700" title="匯入"><i className="fa-solid fa-file-import"></i></button>
                                         <button onClick={() => exportData(inventory, '庫存')} className="bg-green-600 text-white px-4 rounded-lg shadow hover:bg-green-700" title="匯出"><i className="fa-solid fa-file-export"></i></button>
                                     </div>
                                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4" ref={listRef}>
-                                        {filteredGroupedInventory.map((group, idx) => (
-                                            <div key={group.品名} data-id={group.品名} className="bg-white p-4 rounded-xl shadow-sm border relative overflow-hidden flex flex-col">
+                                        {filteredGroupedInventory.map((group, idx) => {
+                                            const tags = parseTags(group.分類);
+                                            return (
+                                            <div key={group.品名} data-id={group.品名} className="bg-white p-4 rounded-xl shadow-sm border relative overflow-hidden flex flex-col hover:border-blue-300 transition-colors">
                                                 <div className="flex justify-between items-start border-b pb-2 mb-2">
                                                     <div className="flex items-center gap-2">
                                                         {!search && <i className="fa-solid fa-grip-lines text-gray-300 cursor-grab drag-handle py-2"></i>}
-                                                        <h3 className="font-bold text-gray-800 text-lg line-clamp-2">{group.品名}</h3>
+                                                        <div>
+                                                            <h3 className="font-bold text-gray-800 text-lg line-clamp-2">{group.品名}</h3>
+                                                            {tags.length > 0 && (
+                                                                <div className="flex flex-wrap gap-1 mt-1">
+                                                                    {tags.map(t => <span key={t} className="text-[10px] bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded border border-indigo-100 font-bold">{t}</span>)}
+                                                                </div>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                     <div className="text-right flex-shrink-0 ml-2">
                                                         <div className={`text-3xl font-bold ${group.總數量 < group.警戒值 ? 'text-red-600' : 'text-blue-600'}`}>{group.總數量}</div>
@@ -413,10 +599,7 @@
                                                     {group.details.map((detail, dIdx) => (
                                                         <div key={dIdx} className="text-sm text-gray-600 bg-gray-50 p-2 rounded border border-gray-100">
                                                             <div className="flex justify-between items-start">
-                                                                <div className="flex items-start gap-2">
-                                                                    <i className="fa-solid fa-map-pin text-gray-400 mt-1"></i>
-                                                                    <span className="font-medium break-all">{[detail.倉庫, detail.地點, detail.位置].filter(Boolean).join(' / ') || '未指定位置'}</span>
-                                                                </div>
+                                                                <div className="flex items-start gap-2"><i className="fa-solid fa-map-pin text-gray-400 mt-1"></i><span className="font-medium break-all">{[detail.倉庫, detail.地點, detail.位置].filter(Boolean).join(' / ') || '未指定位置'}</span></div>
                                                                 <span className="font-bold bg-white px-2 rounded border border-gray-200 text-gray-700 flex-shrink-0">x{detail.數量}</span>
                                                             </div>
                                                             {detail.序號 && <div className="text-xs text-gray-500 mt-1 ml-5 break-all font-mono"><i className="fa-solid fa-barcode mr-1"></i>{detail.序號}</div>}
@@ -425,9 +608,9 @@
                                                     ))}
                                                 </div>
                                             </div>
-                                        ))}
+                                        )})}
                                     </div>
-                                    {filteredGroupedInventory.length === 0 && <div className="text-center text-gray-400 mt-20">無匹配庫存項目</div>}
+                                    {filteredGroupedInventory.length === 0 && <div className="text-center text-gray-400 mt-20"><i className="fa-solid fa-box-open text-4xl mb-3 block text-gray-300"></i>無匹配庫存項目</div>}
                                 </div>
                             )}
 
@@ -441,33 +624,31 @@
                                         </div>
                                     </div>
                                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                        {/* 告警頁面現在也是使用聚合後的資料 */}
-                                        {lowStockGroups.map((group, idx) => (
+                                        {lowStockGroups.map((group, idx) => {
+                                            const tags = parseTags(group.分類);
+                                            return (
                                             <div key={idx} className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-red-500 flex flex-col">
                                                 <div className="flex justify-between items-center mb-2 pb-2 border-b border-gray-100">
-                                                    <h3 className="font-bold text-gray-800 text-lg">{group.品名}</h3>
-                                                    <div className="text-right">
-                                                        <span className="text-3xl font-black text-red-600">{group.總數量}</span>
-                                                        <div className="text-xs text-gray-400 font-bold">警戒: {group.警戒值}</div>
+                                                    <div>
+                                                        <h3 className="font-bold text-gray-800 text-lg">{group.品名}</h3>
+                                                        {tags.length > 0 && <div className="flex gap-1 mt-1">{tags.map(t=><span key={t} className="inline-block text-[10px] bg-red-50 text-red-600 px-2 py-0.5 rounded border border-red-100 font-bold">{t}</span>)}</div>}
                                                     </div>
+                                                    <div className="text-right"><span className="text-3xl font-black text-red-600">{group.總數量}</span><div className="text-xs text-gray-400 font-bold">警戒: {group.警戒值}</div></div>
                                                 </div>
                                                 <div className="space-y-1 flex-1 overflow-y-auto max-h-40">
                                                     {group.details.map((detail, dIdx) => (
-                                                        <div key={dIdx} className="text-sm text-gray-600 flex justify-between bg-red-50 p-2 rounded">
-                                                            <span className="font-medium">{[detail.倉庫, detail.地點].filter(Boolean).join(' / ')}</span>
-                                                            <span className="font-bold">x{detail.數量}</span>
-                                                        </div>
+                                                        <div key={dIdx} className="text-sm text-gray-600 flex justify-between bg-red-50 p-2 rounded"><span className="font-medium">{[detail.倉庫, detail.地點].filter(Boolean).join(' / ')}</span><span className="font-bold">x{detail.數量}</span></div>
                                                     ))}
                                                 </div>
                                             </div>
-                                        ))}
+                                        )})}
                                     </div>
                                 </div>
                             )}
 
                             {page === 'form' && (
-                                <div className="flex flex-col h-full max-w-3xl mx-auto">
-                                    <div className="bg-white p-6 md:p-8 rounded-xl shadow-sm border border-gray-100 space-y-6 mb-6">
+                                <div className="flex flex-col h-full max-w-3xl mx-auto relative pb-8">
+                                    <div className="bg-white p-6 md:p-8 rounded-xl shadow-sm border border-gray-100 space-y-5 mb-6">
                                         <div className="flex flex-col md:flex-row gap-6">
                                             <div className="hidden md:flex flex-col w-32 space-y-2">
                                                 <div className="text-xs font-bold text-gray-400 text-center uppercase tracking-wider mb-1">Mode</div>
@@ -491,35 +672,50 @@
                                             </div>
                                         </div>
                                         
-                                        <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
-                                            <div className="flex gap-2 mb-3">
+                                        <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-3">
+                                            <div className="flex gap-2">
                                                 <div className="relative flex-1 flex">
                                                     <textarea rows="1" placeholder="掃描或輸入序號..." className="w-full p-3 border rounded-l-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 outline-none resize-none overflow-hidden h-11 leading-5" value={quickItem.barcode} onChange={e => setQuickItem({...quickItem, barcode: e.target.value, qty: countSerials(e.target.value)})} onInput={(e) => { e.target.style.height = 'auto'; e.target.style.height = (e.target.scrollHeight) + 'px'; }}></textarea>
                                                     <button onClick={() => setScanning(true)} className="w-12 bg-slate-800 text-white rounded-r-lg hover:bg-slate-700 transition flex items-center justify-center border-r border-slate-700"><i className="fa-solid fa-qrcode"></i></button>
                                                     <button onClick={handleFetchCloudScans} className="w-12 bg-sky-600 text-white rounded-lg ml-2 hover:bg-sky-700 transition flex items-center justify-center shadow-sm" title="匯入 App 掃描"><i className="fa-solid fa-cloud-arrow-down"></i></button>
                                                 </div>
-                                                <input type="number" className="w-16 p-2 border rounded-lg text-center font-bold text-lg" value={quickItem.qty} onChange={e => setQuickItem({...quickItem, qty: parseInt(e.target.value)||0})} />
+                                                <input type="number" className="w-16 p-2 border rounded-lg text-center font-bold text-lg bg-white" value={quickItem.qty} onChange={e => setQuickItem({...quickItem, qty: parseInt(e.target.value)||0})} />
                                             </div>
-                                            <div className="flex gap-2 mb-3">
-                                                <input list="list-names" placeholder="品名 (輸入或選單)" className="flex-1 p-2 border rounded-lg text-sm" value={quickItem.name} onChange={e => handleQuickInputNameChange(e.target.value)} />
-                                                {globalSettings.type === 'IN' && <input type="number" placeholder="警戒" className="w-20 p-2 border rounded-lg text-sm text-center" value={quickItem.minStock} onChange={e => setQuickItem({...quickItem, minStock: parseInt(e.target.value)||0})} />}
+                                            
+                                            <div className="flex gap-2">
+                                                <input list="list-names" placeholder="品名 (輸入或選單)" className="flex-1 p-2 border rounded-lg text-sm bg-white" value={quickItem.name} onChange={e => handleQuickInputNameChange(e.target.value)} />
+                                                {globalSettings.type === 'IN' && <input type="number" placeholder="警戒" className="w-20 p-2 border rounded-lg text-sm text-center bg-white" value={quickItem.minStock} onChange={e => setQuickItem({...quickItem, minStock: parseInt(e.target.value)||0})} />}
                                             </div>
-                                            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
-                                                <input list="list-warehouses" placeholder="倉庫" className="p-2 border rounded text-sm" value={quickItem.warehouse} onChange={e => setQuickItem({...quickItem, warehouse: e.target.value})} />
-                                                <input list="list-locations" placeholder="地點" className="p-2 border rounded text-sm" value={quickItem.location} onChange={e => setQuickItem({...quickItem, location: e.target.value})} />
-                                                <input list="list-positions" placeholder="位置" className="p-2 border rounded text-sm" value={quickItem.position} onChange={e => setQuickItem({...quickItem, position: e.target.value})} />
-                                                <input placeholder={globalSettings.type === 'OUT' ? "使用地點" : "備註"} className="p-2 border rounded text-sm" value={quickItem.note} onChange={e => setQuickItem({...quickItem, note: e.target.value})} />
+
+                                            {/* 條件渲染：只有在非出庫模式下，才顯示多重標籤輸入器 */}
+                                            {globalSettings.type !== 'OUT' && (
+                                                <TagEditor tagsString={quickItem.category} onChange={val => setQuickItem({...quickItem, category: val})} />
+                                            )}
+
+                                            <div className="grid grid-cols-3 gap-2">
+                                                <input list="list-warehouses" placeholder="倉庫" className="p-2 border rounded text-sm bg-white" value={quickItem.warehouse} onChange={e => setQuickItem({...quickItem, warehouse: e.target.value})} />
+                                                <input list="list-locations" placeholder="地點" className="p-2 border rounded text-sm bg-white" value={quickItem.location} onChange={e => setQuickItem({...quickItem, location: e.target.value})} />
+                                                <input list="list-positions" placeholder="位置" className="p-2 border rounded text-sm bg-white" value={quickItem.position} onChange={e => setQuickItem({...quickItem, position: e.target.value})} />
+                                            </div>
+                                            <div>
+                                                <input placeholder={globalSettings.type === 'OUT' ? "使用地點" : "備註"} className="w-full p-2 border rounded text-sm bg-white" value={quickItem.note} onChange={e => setQuickItem({...quickItem, note: e.target.value})} />
                                             </div>
                                             <button onClick={handleAddQuickItemToCart} className="w-full py-2.5 bg-blue-600 text-white rounded-lg font-bold shadow hover:bg-blue-700 transition"><i className="fa-solid fa-plus mr-2"></i>加入清單</button>
                                         </div>
                                     </div>
 
                                     <div className="flex-1 overflow-y-auto pb-24 md:pb-4 space-y-2">
-                                        {batchCart.map((item, idx) => (
+                                        {batchCart.map((item, idx) => {
+                                            const tags = parseTags(item.category);
+                                            return (
                                             <div key={idx} className="bg-white p-3 rounded-lg shadow-sm border border-gray-100 flex items-center justify-between group hover:border-blue-300 transition-colors cursor-pointer" onClick={() => handleEditItem(idx)}>
                                                 <div className="flex-1 mr-3">
-                                                    <div className="font-bold text-gray-800">{item.name || <span className="text-red-400 italic">未輸入名稱</span>}</div>
-                                                    <div className="text-xs text-gray-500 truncate max-w-[200px] md:max-w-md">{item.barcode}</div>
+                                                    <div className="font-bold text-gray-800 flex flex-wrap items-center gap-1.5 mb-1">
+                                                        {item.name || <span className="text-red-400 italic">未輸入名稱</span>}
+                                                        {/* 如果是出庫，購物車內依然可見該商品的標籤供辨識，只是不能編輯它 */}
+                                                        {tags.map(t => <span key={t} className="text-[10px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded border border-indigo-100">{t}</span>)}
+                                                    </div>
+                                                    <div className="text-xs text-gray-500 truncate max-w-[200px] md:max-w-md font-mono">{item.barcode}</div>
                                                     <div className="text-xs text-gray-400 mt-0.5">{[item.warehouse, item.location, item.position].filter(Boolean).join(' / ')}</div>
                                                     {item.note && <div className="text-xs text-gray-500 mt-1"><i className={`fa-solid ${globalSettings.type === 'OUT' ? 'fa-location-dot' : 'fa-comment'} mr-1`}></i>{item.note}</div>}
                                                 </div>
@@ -528,71 +724,80 @@
                                                     <button onClick={(e) => { e.stopPropagation(); handleRemoveItem(idx); }} className="w-8 h-8 rounded-full bg-gray-100 text-gray-400 hover:bg-red-100 hover:text-red-500 flex items-center justify-center transition"><i className="fa-solid fa-trash"></i></button>
                                                 </div>
                                             </div>
-                                        ))}
+                                        )})}
                                         {batchCart.length === 0 && <div className="text-center text-gray-300 py-10"><i className="fa-solid fa-basket-shopping text-6xl mb-4 block"></i>清單是空的</div>}
                                     </div>
 
                                     {batchCart.length > 0 && (
-                                        <div className="fixed bottom-20 md:bottom-8 left-4 right-4 md:left-auto md:right-8 md:w-96 z-20">
-                                            <button onClick={handleBatchSubmit} className={`w-full py-4 rounded-xl text-white font-bold shadow-2xl text-lg flex items-center justify-center gap-3 transition transform active:scale-95 ${globalSettings.type === 'IN' ? 'bg-gradient-to-r from-blue-600 to-blue-500' : globalSettings.type === 'OUT' ? 'bg-gradient-to-r from-orange-600 to-orange-500' : 'bg-gradient-to-r from-purple-600 to-purple-500'}`}><i className="fa-solid fa-paper-plane"></i> 確認送出 ({batchCart.length} 筆)</button>
+                                        <div className="fixed bottom-20 md:bottom-8 left-4 right-4 md:left-64 md:right-8 md:w-96 z-20 flex justify-center">
+                                            <button onClick={handleBatchSubmit} className={`w-full max-w-lg py-4 rounded-xl text-white font-bold shadow-2xl text-lg flex items-center justify-center gap-3 transition transform active:scale-95 ${globalSettings.type === 'IN' ? 'bg-gradient-to-r from-blue-600 to-blue-500' : globalSettings.type === 'OUT' ? 'bg-gradient-to-r from-orange-600 to-orange-500' : 'bg-gradient-to-r from-purple-600 to-purple-500'}`}><i className="fa-solid fa-paper-plane"></i> 確認送出 ({batchCart.length} 筆)</button>
                                         </div>
                                     )}
                                 </div>
                             )}
 
                             {page === 'history' && (
-                                <div className="p-4 space-y-4 max-w-5xl mx-auto w-full">
-                                    <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center">
-                                        <div className="flex gap-2 flex-1 w-full md:w-auto">
-                                            <button onClick={handleRefreshLogs} className="flex-1 md:flex-none bg-white border border-gray-300 px-4 py-2 rounded-lg shadow-sm hover:bg-gray-50" title="重整"><i className="fa-solid fa-rotate-right"></i></button>
-                                            <button onClick={() => exportData(logs, '紀錄')} className="flex-1 md:flex-none bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700" title="匯出"><i className="fa-solid fa-file-export"></i></button>
-                                        </div>
-                                    </div>
-                                    
-                                    <div className="bg-white p-3 rounded-lg shadow-sm space-y-2">
-                                        <div className="flex gap-2">
-                                            <input type="text" placeholder="品名或序號..." className="flex-1 p-2 border rounded-lg text-sm min-w-0" value={logFilter.keyword} onChange={e => setLogFilter({...logFilter, keyword: e.target.value})} />
-                                            <select className="p-2 border rounded-lg text-sm flex-shrink-0 w-24 md:w-32 bg-white" value={logFilter.type} onChange={e => setLogFilter({...logFilter, type: e.target.value})}><option value="">全部</option><option value="IN">入庫</option><option value="OUT">出庫</option></select>
-                                        </div>
-                                        <input type="date" className="w-40 p-2 border rounded-lg text-sm bg-gray-50" value={logFilter.date} onChange={e => setLogFilter({...logFilter, date: e.target.value})} />
-                                    </div>
-                                    
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        {filteredLogs.map((log, idx) => (
-                                            <div key={idx} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col gap-2 hover:shadow-md transition-shadow">
-                                                <div className="flex justify-between items-start border-b border-gray-100 pb-2">
-                                                    <div className="flex-1 min-w-0 mr-2">
-                                                        <div className="font-bold text-lg text-gray-800 break-words">{log.品名}</div>
-                                                        <div className="text-xs text-gray-500 mt-1">{new Date(log.時間).toLocaleString()}</div>
-                                                    </div>
-                                                    <div className="text-right flex-shrink-0">
-                                                        <span className={`block font-bold text-lg ${log.類型 === 'IN' ? 'text-blue-600' : log.類型 === 'OUT' ? 'text-orange-600' : 'text-purple-600'}`}>{log.變動數量 > 0 ? '+' : ''}{log.變動數量}</span>
-                                                        <span className="text-xs text-gray-400">餘 {log.結餘}</span>
-                                                    </div>
-                                                </div>
-                                                <div className="flex justify-between text-sm text-gray-600">
-                                                    <span><i className="fa-solid fa-user mr-1 text-gray-400"></i> {log.異動者 || '-'}</span>
-                                                    <span className={`font-bold text-xs px-2 py-0.5 rounded-full ${log.類型 === 'IN' ? 'bg-blue-100 text-blue-700' : log.類型 === 'OUT' ? 'bg-orange-100 text-orange-700' : 'bg-purple-100 text-purple-700'}`}>{log.類型 === 'IN' ? '入庫' : log.類型 === 'OUT' ? '出庫' : '盤點'}</span>
-                                                </div>
-                                                {(log.倉庫 || log.地點 || log.位置) && <div className="text-xs text-gray-500"><i className="fa-solid fa-map-pin mr-1 w-4 text-center"></i>{[log.倉庫, log.地點, log.位置].filter(Boolean).join(' / ')}</div>}
-                                                {(log.序號 || log.相關序號) && <div className="text-xs text-gray-500 font-mono break-all"><i className="fa-solid fa-barcode mr-1 w-4 text-center"></i>{log.序號 || log.相關序號}</div>}
-                                                {(log.備註 || log.使用地點) && (
-                                                    <div className={`text-xs p-2 rounded mt-1 flex items-start ${log.類型 === 'OUT' ? 'bg-orange-50 text-orange-800' : 'bg-blue-50 text-blue-800'}`}>
-                                                        <i className={`fa-solid ${log.類型 === 'OUT' ? 'fa-location-dot' : 'fa-comment'} mt-0.5 mr-2`}></i>
-                                                        <span className="font-semibold mr-1 flex-shrink-0">{log.類型 === 'OUT' ? '使用地點:' : '備註:'}</span>
-                                                        <span className="break-words">{log.類型 === 'OUT' ? log.使用地點 : log.備註}</span>
-                                                    </div>
-                                                )}
+                                <div className="p-4 space-y-4 max-w-5xl mx-auto w-full pb-20">
+                                    <div className="bg-white p-4 rounded-xl shadow-sm mb-4 space-y-3">
+                                        <div className="flex items-center justify-between">
+                                            <h2 className="font-bold text-gray-700 text-lg">異動紀錄</h2>
+                                            <div className="flex gap-2">
+                                                <button onClick={handleRefreshLogs} className="w-9 h-9 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center hover:bg-blue-200"><i className="fa-solid fa-rotate-right"></i></button>
+                                                <button onClick={() => exportData(logs, '紀錄')} className="w-9 h-9 bg-green-100 text-green-600 rounded-lg flex items-center justify-center hover:bg-green-200"><i className="fa-solid fa-file-export"></i></button>
                                             </div>
-                                        ))}
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <div className="relative flex-1">
+                                                <i className="fa-solid fa-magnifying-glass absolute left-3 top-3 text-gray-400"></i>
+                                                <input type="text" placeholder="品名或序號..." className="pl-9 w-full p-2 border rounded-lg text-sm bg-gray-50" value={logFilter.keyword} onChange={e => setLogFilter({...logFilter, keyword: e.target.value})} />
+                                            </div>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <select className="flex-1 p-2 border rounded-lg text-sm bg-gray-50 font-medium text-gray-700" value={logFilter.category} onChange={e => setLogFilter({...logFilter, category: e.target.value})}>
+                                                <option value="">所有標籤</option>
+                                                {uniqueOptions.categories.map((c, i) => <option key={i} value={c}>{c}</option>)}
+                                            </select>
+                                            <select className="flex-1 p-2 border rounded-lg text-sm bg-gray-50" value={logFilter.type} onChange={e => setLogFilter({...logFilter, type: e.target.value})}>
+                                                <option value="">全部類型</option><option value="IN">入庫</option><option value="OUT">出庫</option><option value="SET">盤點</option>
+                                            </select>
+                                            <input type="date" className="flex-1 p-2 border rounded-lg text-sm bg-gray-50" value={logFilter.date} onChange={e => setLogFilter({...logFilter, date: e.target.value})} />
+                                        </div>
                                     </div>
-                                    {filteredLogs.length === 0 && <div className="text-center text-gray-400 py-10">無資料</div>}
+                                    
+                                    <div className="space-y-3">{filteredLogs.map((log, idx) => (
+                                        <div key={idx} className={`bg-white p-3 rounded-lg shadow-sm border-l-4 ${log.類型 === 'IN' ? 'border-blue-500' : log.類型 === 'OUT' ? 'border-orange-500' : 'border-purple-500'} flex flex-col gap-1`}>
+                                            <div className="flex justify-between items-start">
+                                                <div className="flex-1 min-w-0 mr-2">
+                                                    <div className="font-bold text-lg text-gray-800 break-words flex items-center flex-wrap gap-1.5">
+                                                        {log.品名} 
+                                                        {log.displayTags.map(t => <span key={t} className="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded border border-slate-200 font-normal">{t}</span>)}
+                                                    </div>
+                                                    <div className="text-xs text-gray-500 mt-1">{new Date(log.時間).toLocaleString()}</div>
+                                                </div>
+                                                <div className="text-right flex-shrink-0">
+                                                    <span className={`block font-bold text-lg ${log.類型 === 'IN' ? 'text-blue-600' : log.類型 === 'OUT' ? 'text-orange-600' : 'text-purple-600'}`}>{log.變動數量 > 0 ? '+' : ''}{log.變動數量}</span>
+                                                    <span className="text-xs text-gray-400">餘 {log.結餘}</span>
+                                                </div>
+                                            </div>
+                                            <div className="text-sm text-gray-600 bg-gray-50 p-1 rounded mt-1 flex justify-between items-center">
+                                                <span><i className="fa-solid fa-user mr-1 text-gray-400"></i> {log.異動者 || '未填寫'}</span>
+                                                <span className={`px-2 py-0.5 rounded text-xs font-bold ${log.類型 === 'IN' ? 'bg-blue-100 text-blue-600' : log.類型 === 'OUT' ? 'bg-orange-100 text-orange-600' : 'bg-purple-100 text-purple-600'}`}>
+                                                    {log.類型.includes('盤點') ? '盤點' : log.類型 === 'IN' ? '入庫' : '出庫'}
+                                                </span>
+                                            </div>
+                                            {(log.倉庫 || log.地點 || log.位置) && (<div className="text-xs text-gray-500 flex items-center gap-1 mt-1"><i className="fa-solid fa-map-pin text-gray-400"></i>{[log.倉庫, log.地點, log.位置].filter(Boolean).join(' / ')}</div>)}
+                                            {(log.序號 || log.相關序號) && (<div className="text-xs text-gray-500 mt-1 border-t pt-1 border-dashed border-gray-200 break-all font-mono"><i className="fa-solid fa-barcode mr-1 text-gray-400"></i>SN: {log.序號 || log.相關序號}</div>)}
+                                            {(log.類型 !== 'OUT' && log.備註) && (<div className="text-xs text-gray-500 mt-1 flex items-center gap-1 bg-gray-50 p-1 rounded break-all"><i className="fa-solid fa-circle-info text-blue-400 mr-1 flex-shrink-0"></i><span className="font-semibold mr-1 flex-shrink-0">備註:</span><span>{log.備註}</span></div>)}
+                                            {(log.類型 === 'OUT' && log.使用地點) && (<div className="text-xs text-gray-500 mt-1 flex items-center gap-1 bg-gray-50 p-1 rounded break-all"><i className="fa-solid fa-location-dot text-orange-400 mr-1 flex-shrink-0"></i><span className="font-semibold mr-1 flex-shrink-0">使用地點:</span><span>{log.使用地點}</span></div>)}
+                                        </div>
+                                    ))}
+                                    {filteredLogs.length === 0 && <div className="text-center text-gray-400 mt-10"><i className="fa-regular fa-folder-open text-4xl mb-3 block text-gray-300"></i>無符合條件的紀錄</div>}
+                                    </div>
                                 </div>
                             )}
 
                         </div>
 
-                        {/* 手機版底部導航 */}
                         <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 flex justify-around py-3 text-[10px] font-black text-slate-400 z-[50] shadow-[0_-10px_20px_-5px_rgba(0,0,0,0.05)] pb-6">
                             {navItems.map(item => (
                                 <button key={item.id} onClick={() => { setPage(item.id); if(item.id === 'history') loadLogs(); }} className={`flex flex-col items-center transition-all ${page === item.id ? 'text-blue-600 scale-110' : 'text-slate-300'}`}>
