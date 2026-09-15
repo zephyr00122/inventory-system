@@ -1,0 +1,275 @@
+name: Fix batch transaction planning state
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Patch Code.gs
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          path = Path('appscript/Code.gs')
+          text = path.read_text(encoding='utf-8')
+
+          old_loop = '''  const data = invSheet.getDataRange().getDisplayValues();
+  const serialIndex = buildSerialIndex(data);
+  const rowUpdates = [];
+  const newRows = [];
+  const logRows = [];
+
+  // 第一階段：完整驗證整批，不先寫 Sheet。
+  batchData.forEach((item, itemIndex) => {
+    const normalized = normalizeTransactionItem(item, itemIndex);
+    const result = validateAndPlanItem(normalized, data, serialIndex, rowUpdates, newRows);
+    logRows.push({
+      ...result,
+      modifier,
+      timestamp,
+      transactionId
+    });
+  });'''
+
+          new_loop = '''  const data = invSheet.getDataRange().getDisplayValues();
+  const serialIndex = buildSerialIndex(data);
+  const planningState = buildPlanningState(data, serialIndex);
+  const rowUpdates = [];
+  const newRows = [];
+  const logRows = [];
+
+  // 第一階段：完整驗證整批，不先寫 Sheet。
+  // planningState 會在每筆交易後更新，因此同一庫位的後續交易會使用前一筆交易的結果。
+  batchData.forEach((item, itemIndex) => {
+    const normalized = normalizeTransactionItem(item, itemIndex);
+    const result = validateAndPlanItem(normalized, data, planningState, rowUpdates, newRows);
+    logRows.push({
+      ...result,
+      modifier,
+      timestamp,
+      transactionId
+    });
+  });'''
+
+          if old_loop not in text:
+              raise SystemExit('handleBatchUpdate planning block not found')
+          text = text.replace(old_loop, new_loop, 1)
+
+          new_validation = r'''function buildPlanningState(data, serialIndex) {
+  const rows = {};
+  for (let i = 1; i < data.length; i++) {
+    const rowNumber = i + 1;
+    rows[rowNumber] = readInventoryRow(data[i], rowNumber);
+  }
+  return { rows, serialIndex: Object.assign({}, serialIndex), nextNewRowId: -1 };
+}
+
+function getPlanningRowByLocation(planningState, name, warehouse, location, position) {
+  const rowNumbers = Object.keys(planningState.rows);
+  for (let i = 0; i < rowNumbers.length; i++) {
+    const row = planningState.rows[rowNumbers[i]];
+    if (
+      row.name === name &&
+      row.warehouse === warehouse &&
+      row.location === location &&
+      row.position === position
+    ) {
+      return row;
+    }
+  }
+  return null;
+}
+
+function removeSerialsFromPlanningIndex(planningState, rowNumber, serials) {
+  serials.forEach(serial => {
+    if (planningState.serialIndex[serial] && Number(planningState.serialIndex[serial]) === Number(rowNumber)) {
+      delete planningState.serialIndex[serial];
+    }
+  });
+}
+
+function addSerialsToPlanningIndex(planningState, rowNumber, serials) {
+  serials.forEach(serial => {
+    if (planningState.serialIndex[serial] && Number(planningState.serialIndex[serial]) !== Number(rowNumber)) {
+      throw new Error(`序號 ${serial} 已存在於其他庫位`);
+    }
+    planningState.serialIndex[serial] = rowNumber;
+  });
+}
+
+function validateAndPlanItem(tx, data, planningState, rowUpdates, newRows) {
+  const serialRows = tx.serials.map(serial => planningState.serialIndex[serial] || null);
+  const existingRows = uniqueNonEmpty(serialRows);
+
+  if (existingRows.length > 1) {
+    throw new Error(`第 ${tx.itemIndex + 1} 筆：輸入序號分屬不同庫位，請分開處理`);
+  }
+
+  let row = existingRows.length === 1
+    ? planningState.rows[Number(existingRows[0])] || null
+    : null;
+
+  if (!row) {
+    row = getPlanningRowByLocation(planningState, tx.name, tx.warehouse, tx.location, tx.position);
+  }
+
+  if (tx.type === 'OUT' && !row) throw new Error(`第 ${tx.itemIndex + 1} 筆：無此庫存`);
+
+  const rowNumber = row ? row.rowNumber : planningState.nextNewRowId--;
+  const currentQty = row ? row.qty : 0;
+  const currentSerials = row ? row.serials.slice() : [];
+  let finalQty = currentQty;
+  let finalSerials = currentSerials.slice();
+  let finalNote = row ? row.note : "";
+  let finalCategory = row ? row.category : "";
+  let usageLocation = "";
+  let logQtyChange = 0;
+
+  if (tx.type === 'OUT') {
+    if (tx.serials.length > 0) {
+      const missing = tx.serials.filter(serial => !finalSerials.includes(serial));
+      if (missing.length) throw new Error(`第 ${tx.itemIndex + 1} 筆：找不到序號 ${missing.join(', ')}`);
+    }
+    if (tx.qtyInput > currentQty) {
+      throw new Error(`第 ${tx.itemIndex + 1} 筆：庫存不足，目前 ${currentQty}，欲出庫 ${tx.qtyInput}`);
+    }
+
+    finalQty = currentQty - tx.qtyInput;
+    logQtyChange = -tx.qtyInput;
+    if (tx.serials.length > 0) {
+      finalSerials = finalSerials.filter(serial => !tx.serials.includes(serial));
+      removeSerialsFromPlanningIndex(planningState, rowNumber, tx.serials);
+    }
+    usageLocation = tx.note;
+  } else if (tx.type === 'IN') {
+    tx.serials.forEach(serial => {
+      const existingRow = planningState.serialIndex[serial];
+      if (existingRow && Number(existingRow) !== Number(rowNumber)) {
+        throw new Error(`第 ${tx.itemIndex + 1} 筆：序號 ${serial} 已存在於其他庫位`);
+      }
+      if (finalSerials.includes(serial)) {
+        throw new Error(`第 ${tx.itemIndex + 1} 筆：序號 ${serial} 已存在於此庫位`);
+      }
+    });
+
+    finalQty = currentQty + tx.qtyInput;
+    logQtyChange = tx.qtyInput;
+    finalSerials = finalSerials.concat(tx.serials);
+    if (tx.note) finalNote = tx.note;
+    if (tx.category) finalCategory = tx.category;
+    addSerialsToPlanningIndex(planningState, rowNumber, tx.serials);
+  } else {
+    tx.serials.forEach(serial => {
+      const existingRow = planningState.serialIndex[serial];
+      if (existingRow && Number(existingRow) !== Number(rowNumber)) {
+        throw new Error(`第 ${tx.itemIndex + 1} 筆：序號 ${serial} 已存在於其他庫位`);
+      }
+    });
+
+    finalQty = tx.qtyInput;
+    logQtyChange = finalQty - currentQty;
+    if (tx.serials.length > 0) {
+      removeSerialsFromPlanningIndex(planningState, rowNumber, finalSerials);
+      finalSerials = tx.serials.slice();
+      addSerialsToPlanningIndex(planningState, rowNumber, finalSerials);
+    }
+    if (tx.note) finalNote = tx.note;
+    if (tx.category) finalCategory = tx.category;
+  }
+
+  if (finalQty < 0) throw new Error(`第 ${tx.itemIndex + 1} 筆：庫存不可小於 0`);
+
+  const logType = tx.type === 'SET'
+    ? `盤點 (${logQtyChange > 0 ? '+' : ''}${logQtyChange})`
+    : tx.type;
+
+  const nextState = {
+    rowNumber,
+    name: row ? row.name : tx.name,
+    qty: finalQty,
+    warehouse: row ? row.warehouse : tx.warehouse,
+    location: row ? row.location : tx.location,
+    position: row ? row.position : tx.position,
+    serials: finalSerials.slice(),
+    note: finalNote,
+    minStock: row ? row.minStock : tx.minStock,
+    category: finalCategory
+  };
+  planningState.rows[rowNumber] = nextState;
+
+  if (rowNumber > 0) {
+    rowUpdates.push({
+      rowNumber,
+      qty: finalQty,
+      serials: finalSerials,
+      note: finalNote,
+      category: finalCategory,
+      timestamp: null
+    });
+  } else {
+    newRows.push({
+      _planningRowNumber: rowNumber,
+      name: nextState.name,
+      qty: finalQty,
+      warehouse: nextState.warehouse,
+      location: nextState.location,
+      position: nextState.position,
+      serials: finalSerials,
+      note: finalNote,
+      minStock: nextState.minStock,
+      category: finalCategory
+    });
+  }
+
+  return {
+    name: nextState.name,
+    logType,
+    logQtyChange,
+    finalQty,
+    modifier: "",
+    note: tx.type === 'OUT' ? finalNote : (tx.note || finalNote),
+    usageLocation,
+    barcodeInput: tx.barcodeInput,
+    warehouse: nextState.warehouse,
+    location: nextState.location,
+    position: nextState.position,
+    category: finalCategory,
+    rowNumber: rowNumber > 0 ? rowNumber : "NEW"
+  };
+}
+
+function applyInventoryChanges(invSheet, rowUpdates, newRows, timestamp) {'''
+
+          function_pattern = re.compile(r"function validateAndPlanItem\(tx, data, serialIndex, rowUpdates, newRows\) \{.*?\n\}\n\nfunction applyInventoryChanges\(invSheet, rowUpdates, newRows, timestamp\) \{", re.S)
+          text, count = function_pattern.subn(new_validation, text, count=1)
+          if count != 1:
+              raise SystemExit('validateAndPlanItem block not found')
+
+          path.write_text(text, encoding='utf-8')
+
+      - name: Verify same-row sequential planning
+        run: |
+          grep -q "buildPlanningState(data, serialIndex)" appscript/Code.gs
+          grep -q "validateAndPlanItem(normalized, data, planningState, rowUpdates, newRows)" appscript/Code.gs
+          grep -q "planningState.rows\[rowNumber\] = nextState" appscript/Code.gs
+          grep -q "removeSerialsFromPlanningIndex" appscript/Code.gs
+          grep -q "addSerialsToPlanningIndex" appscript/Code.gs
+
+      - name: Commit and remove temporary workflows
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add appscript/Code.gs
+          git rm .github/workflows/fix-batch-state.yml .github/workflows/fix-index-response-v2.yml .github/workflows/temp-fix-index.yml || true
+          git diff --cached --quiet || git commit -m "fix: process same-location batch transactions sequentially"
+          git push
