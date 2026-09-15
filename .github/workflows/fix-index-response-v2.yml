@@ -1,0 +1,107 @@
+name: Fix index transaction responses v2
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Patch index.html
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          path = Path('index.html')
+          text = path.read_text(encoding='utf-8')
+
+          import_pattern = re.compile(
+              r"(?P<i>\s*)await fetch\(API_URL,\s*\{\s*method:\s*'POST',\s*mode:\s*'no-cors',\s*body:\s*formData\.toString\(\)\s*\}\);\s*setLoading\(false\);\s*loadData\(true\);",
+              re.S,
+          )
+          import_replacement = r'''\g<i>const res = await fetch(API_URL, {
+\g<i>    method: 'POST',
+\g<i>    headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+\g<i>    body: formData.toString()
+\g<i>});
+\g<i>const json = await res.json();
+\g<i>if (json.status === 'success') {
+\g<i>    Swal.fire({ icon: 'success', title: '匯入完成', text: json.message || '資料已成功匯入', timer: 1800, showConfirmButton: false });
+\g<i>    await loadData(true);
+\g<i>} else if (json.status === 'partial_error') {
+\g<i>    const detail = Array.isArray(json.errors) ? json.errors.join('\\n') : (json.message || '部分資料處理失敗');
+\g<i>    Swal.fire({ icon: 'warning', title: '匯入部分失敗', text: detail });
+\g<i>    await loadData(true);
+\g<i>} else {
+\g<i>    throw new Error(json.message || '後端處理失敗');
+\g<i>}
+\g<i>setLoading(false);'''
+          text, import_count = import_pattern.subn(import_replacement, text, count=1)
+
+          submit_pattern = re.compile(
+              r"(?P<i>\s*)try\s*\{\s*await fetch\(API_URL,\s*\{\s*method:\s*'POST',\s*mode:\s*'no-cors',\s*headers:\s*\{\s*'Content-Type':\s*'application/x-www-form-urlencoded'\s*\},\s*body:\s*formData\.toString\(\)\s*\}\);\s*Swal\.fire\(\{\s*icon:\s*'success',\s*title:\s*'完成',\s*timer:\s*1500,\s*showConfirmButton:\s*false\s*\}\);\s*setBatchCart\(\[\]\);\s*loadData\(true\);\s*\}\s*catch\s*\(e\)\s*\{\s*Swal\.fire\('錯誤',\s*'連線失敗',\s*'error'\);\s*setSyncStatus\('error'\);\s*\}\s*setLoading\(false\);",
+              re.S,
+          )
+          submit_replacement = r'''\g<i>try {
+\g<i>    const res = await fetch(API_URL, {
+\g<i>        method: 'POST',
+\g<i>        headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+\g<i>        body: formData.toString()
+\g<i>    });
+\g<i>    const json = await res.json();
+\g<i>
+\g<i>    if (json.status === 'success') {
+\g<i>        Swal.fire({ icon: 'success', title: '交易完成', text: json.message || '庫存交易已成功寫入', timer: 1800, showConfirmButton: false });
+\g<i>        setBatchCart([]);
+\g<i>        await loadData(true);
+\g<i>        setSyncStatus('synced');
+\g<i>    } else if (json.status === 'partial_error') {
+\g<i>        const detail = Array.isArray(json.errors) ? json.errors.join('\\n') : (json.message || '部分交易失敗');
+\g<i>        Swal.fire({ icon: 'warning', title: '交易部分失敗', text: detail });
+\g<i>        await loadData(true);
+\g<i>        setSyncStatus('error');
+\g<i>    } else {
+\g<i>        throw new Error(json.message || '後端處理失敗');
+\g<i>    }
+\g<i>} catch (e) {
+\g<i>    Swal.fire('錯誤', e && e.message ? e.message : '連線失敗，請稍後重試', 'error');
+\g<i>    setSyncStatus('error');
+\g<i>} finally {
+\g<i>    setLoading(false);
+\g<i>}'''
+          text, submit_count = submit_pattern.subn(submit_replacement, text, count=1)
+
+          if import_count != 1:
+              raise SystemExit(f'Import POST pattern matched {import_count} times; aborting.')
+          if submit_count != 1:
+              raise SystemExit(f'Batch submit POST pattern matched {submit_count} times; aborting.')
+
+          path.write_text(text, encoding='utf-8')
+
+      - name: Verify patch
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('index.html').read_text(encoding='utf-8')
+          assert "mode: 'no-cors'" not in text, 'no-cors still present'
+          assert "const json = await res.json();" in text, 'JSON response parsing missing'
+          assert "json.status === 'partial_error'" in text, 'partial error handling missing'
+          print('index.html transaction response patch verified')
+          PY
+
+      - name: Commit and remove temporary workflows
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git rm .github/workflows/fix-index-response-v2.yml .github/workflows/temp-fix-index.yml || true
+          git diff --cached --quiet || git commit -m "fix: handle inventory transaction responses in frontend"
+          git push
