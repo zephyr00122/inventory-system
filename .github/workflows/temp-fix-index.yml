@@ -1,0 +1,111 @@
+name: Patch index transaction response handling
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Patch index.html
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('index.html')
+          text = path.read_text(encoding='utf-8')
+
+          old_import = """                        await fetch(API_URL, { method: 'POST', mode: 'no-cors', body: formData.toString() });
+                        setLoading(false); loadData(true);"""
+          new_import = """                        const res = await fetch(API_URL, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+                            body: formData.toString()
+                        });
+                        const json = await res.json();
+                        if (json.status === 'success') {
+                            Swal.fire({ icon: 'success', title: '匯入完成', text: json.message || '資料已成功匯入', timer: 1800, showConfirmButton: false });
+                            await loadData(true);
+                        } else if (json.status === 'partial_error') {
+                            const detail = Array.isArray(json.errors) ? json.errors.join('\\n') : (json.message || '部分資料處理失敗');
+                            Swal.fire({ icon: 'warning', title: '匯入部分失敗', text: detail });
+                            await loadData(true);
+                        } else {
+                            throw new Error(json.message || '後端處理失敗');
+                        }
+                        setLoading(false);"""
+
+          if old_import not in text:
+              raise SystemExit('Import POST block not found; aborting to avoid accidental edits.')
+          text = text.replace(old_import, new_import, 1)
+
+          old_submit = """                try { 
+                    await fetch(API_URL, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: formData.toString() }); 
+                    Swal.fire({ icon: 'success', title: '完成', timer: 1500, showConfirmButton: false }); 
+                    setBatchCart([]); 
+                    loadData(true); 
+                } catch (e) { 
+                    Swal.fire('錯誤', '連線失敗', 'error'); 
+                    setSyncStatus('error');
+                }
+                setLoading(false);"""
+          new_submit = """                try {
+                    const res = await fetch(API_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+                        body: formData.toString()
+                    });
+
+                    const json = await res.json();
+
+                    if (json.status === 'success') {
+                        Swal.fire({
+                            icon: 'success',
+                            title: '交易完成',
+                            text: json.message || '庫存交易已成功寫入',
+                            timer: 1800,
+                            showConfirmButton: false
+                        });
+                        setBatchCart([]);
+                        await loadData(true);
+                        setSyncStatus('synced');
+                    } else if (json.status === 'partial_error') {
+                        const detail = Array.isArray(json.errors) ? json.errors.join('\\n') : (json.message || '部分交易失敗');
+                        Swal.fire({
+                            icon: 'warning',
+                            title: '交易部分失敗',
+                            text: detail
+                        });
+                        await loadData(true);
+                        setSyncStatus('error');
+                    } else {
+                        throw new Error(json.message || '後端處理失敗');
+                    }
+                } catch (e) {
+                    Swal.fire('錯誤', e && e.message ? e.message : '連線失敗，請稍後重試', 'error');
+                    setSyncStatus('error');
+                } finally {
+                    setLoading(false);
+                }"""
+
+          if old_submit not in text:
+              raise SystemExit('Batch submit POST block not found; aborting to avoid accidental edits.')
+          text = text.replace(old_submit, new_submit, 1)
+
+          path.write_text(text, encoding='utf-8')
+
+      - name: Commit patched index.html and remove temporary workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git rm .github/workflows/temp-fix-index.yml
+          git diff --cached --quiet || git commit -m "fix: handle inventory transaction responses in frontend"
+          git push
